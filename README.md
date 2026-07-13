@@ -215,3 +215,6 @@ git push origin main
 ```
 
 O GitHub Actions faz SSH na VPS e roda `deploy.sh` sozinho.
+
+---
+
