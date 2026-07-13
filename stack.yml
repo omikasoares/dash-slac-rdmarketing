@@ -6,7 +6,7 @@ services:
     image: dash-slac-rdmarketing:latest
 
     networks:
-      - RoyalNet
+      - AutzNet
 
     environment:
       - TZ=America/Sao_Paulo
@@ -44,9 +44,9 @@ services:
         - traefik.http.routers.dash-slac-rdmarketing.tls=true
 
 networks:
-  RoyalNet:
+  AutzNet:
     external: true
-    name: RoyalNet
+    name: AutzNet
 
 volumes:
   dash-slac-rdmarketing-data:
