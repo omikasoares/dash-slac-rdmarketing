@@ -1,0 +1,22 @@
+{
+  "name": "dash-slac-rdmarketing",
+  "version": "1.0.0",
+  "description": "Dashboard de leads do RD Station Marketing para o cliente Slac",
+  "private": true,
+  "main": "server.js",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "get-rd-tokens": "node scripts/get-rd-tokens.js",
+    "sync": "node scripts/run-sync.js",
+    "import-csv": "node scripts/import-csv.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-basic-auth": "^1.2.1"
+  }
+}

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Dashboard de Leads — Slac (RD Station Marketing)</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --surface:      #fcfcfb;
+  --page:         #f9f9f7;
+  --card:         #ffffff;
+  --ink:          #0b0b0b;
+  --ink-2:        #52514e;
+  --ink-muted:    #898781;
+  --gridline:     #e1e0d9;
+  --border:       rgba(11,11,11,0.10);
+
+  --blue:   #2a78d6;
+  --aqua:   #1baf7a;
+  --yellow: #eda100;
+  --violet: #4a3aa7;
+
+  --good:     #0ca30c;
+  --warning:  #fab219;
+  --critical: #d03b3b;
+
+  --shadow: 0 1px 3px rgba(11,11,11,.06), 0 4px 16px rgba(11,11,11,.05);
+}
+
+@media (prefers-color-scheme: dark){
+  :root{
+    --surface:   #1a1a19;
+    --page:      #0d0d0d;
+    --card:      #232322;
+    --ink:       #ffffff;
+    --ink-2:     #c3c2b7;
+    --ink-muted: #898781;
+    --gridline:  #2c2c2a;
+    --border:    rgba(255,255,255,0.10);
+
+    --blue:   #3987e5;
+    --aqua:   #199e70;
+    --yellow: #c98500;
+    --violet: #9085e9;
+
+    --good:     #0ca30c;
+    --warning:  #fab219;
+    --critical: #e66767;
+  }
+}
+
+html{ font-family: system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--page); color:var(--ink) }
+body{ min-height:100vh }
+
+.wrap{ max-width:1360px; margin:0 auto; padding:28px 20px 60px }
+
+header{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:22px; flex-wrap:wrap }
+header h1{ font-size:22px; font-weight:700 }
+header .sub{ color:var(--ink-2); font-size:13px; margin-top:4px }
+
+.sync-bar{ display:flex; align-items:center; gap:10px; font-size:13px; color:var(--ink-2) }
+.sync-bar button{
+  border:1px solid var(--border); background:var(--card); color:var(--ink);
+  border-radius:8px; padding:7px 12px; font-size:13px; cursor:pointer;
+}
+.sync-bar button:hover{ background:var(--surface) }
+.sync-dot{ width:8px; height:8px; border-radius:50%; background:var(--good); display:inline-block }
+.sync-dot.stale{ background:var(--warning) }
+
+.toolbar{
+  display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;
+}
+.toolbar input, .toolbar select{
+  border:1px solid var(--border); background:var(--card); color:var(--ink);
+  border-radius:8px; padding:9px 12px; font-size:14px; min-width:180px;
+}
+.toolbar input{ flex:1; min-width:240px }
+
+.card{
+  background:var(--card); border:1px solid var(--border); border-radius:12px;
+  box-shadow:var(--shadow); overflow:hidden;
+}
+
+table{ width:100%; border-collapse:collapse; font-size:13.5px }
+thead th{
+  text-align:left; padding:10px 14px; font-weight:600; color:var(--ink-2);
+  background:var(--surface); border-bottom:1px solid var(--gridline);
+  white-space:nowrap; position:sticky; top:0;
+}
+tbody td{ padding:10px 14px; border-bottom:1px solid var(--gridline); vertical-align:top }
+tbody tr:hover{ background:var(--surface) }
+tbody tr{ cursor:pointer }
+
+.table-scroll{ overflow-x:auto; max-height:72vh; overflow-y:auto }
+
+.pill{
+  display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px;
+  font-weight:600; white-space:nowrap;
+}
+.pill.stage-lead{ background:color-mix(in srgb, var(--blue) 16%, transparent); color:var(--blue) }
+.pill.stage-cliente{ background:color-mix(in srgb, var(--good) 16%, transparent); color:var(--good) }
+.pill.stage-oportunidade{ background:color-mix(in srgb, var(--violet) 16%, transparent); color:var(--violet) }
+.pill.stage-default{ background:color-mix(in srgb, var(--ink-muted) 16%, transparent); color:var(--ink-2) }
+.pill.venda-sim{ background:color-mix(in srgb, var(--good) 16%, transparent); color:var(--good) }
+
+.tag{
+  display:inline-block; background:var(--surface); border:1px solid var(--gridline);
+  color:var(--ink-2); border-radius:6px; padding:1px 7px; font-size:11px; margin:1px 3px 1px 0;
+}
+
+.muted{ color:var(--ink-muted) }
+.empty-cell{ color:var(--ink-muted) }
+
+/* Modal */
+.overlay{
+  position:fixed; inset:0; background:rgba(0,0,0,.45); display:none;
+  align-items:flex-start; justify-content:center; padding:40px 16px; overflow-y:auto; z-index:50;
+}
+.overlay.open{ display:flex }
+.modal{
+  background:var(--card); border-radius:14px; max-width:720px; width:100%;
+  box-shadow:var(--shadow); border:1px solid var(--border);
+}
+.modal-header{
+  display:flex; justify-content:space-between; align-items:flex-start;
+  padding:20px 22px; border-bottom:1px solid var(--gridline); gap:12px;
+}
+.modal-header h2{ font-size:17px }
+.modal-header .sub{ color:var(--ink-2); font-size:13px; margin-top:3px }
+.modal-close{ border:none; background:none; font-size:20px; color:var(--ink-muted); cursor:pointer; line-height:1 }
+.modal-body{ padding:20px 22px; display:flex; flex-direction:column; gap:20px }
+
+.section-title{ font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); font-weight:700; margin-bottom:8px }
+
+.kv-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px 16px; font-size:13px }
+.kv-grid .k{ color:var(--ink-muted); font-size:11.5px }
+.kv-grid .v{ font-weight:500 }
+
+.event-list{ display:flex; flex-direction:column; gap:8px; max-height:260px; overflow-y:auto }
+.event-item{
+  border:1px solid var(--gridline); border-radius:8px; padding:9px 12px; font-size:12.5px;
+  display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;
+}
+.event-item .id{ font-weight:600 }
+.event-item .attrib{ color:var(--ink-muted); font-size:11.5px }
+
+.notice{
+  border:1px dashed var(--gridline); border-radius:10px; padding:12px 14px;
+  font-size:12.5px; color:var(--ink-muted); background:var(--surface);
+}
+
+footer{ margin-top:18px; font-size:12px; color:var(--ink-muted) }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Dashboard de Leads — Slac</h1>
+      <div class="sub">Dados do RD Station Marketing (RDSM)</div>
+    </div>
+    <div class="sync-bar">
+      <span class="sync-dot" id="syncDot"></span>
+      <span id="syncLabel">carregando…</span>
+      <button id="syncNowBtn">Sincronizar agora</button>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <input id="searchInput" type="text" placeholder="Buscar por nome ou email…"/>
+    <select id="stageFilter">
+      <option value="">Todos os estágios</option>
+    </select>
+    <select id="tagFilter">
+      <option value="">Todas as tags</option>
+    </select>
+  </div>
+
+  <div class="card">
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>Email</th>
+            <th>Telefone</th>
+            <th>Criado em</th>
+            <th>Última conversão</th>
+            <th>Origem (canal / campanha)</th>
+            <th>Estágio</th>
+            <th>Venda</th>
+            <th>Tags</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    Campos como produto, tabulação de perda, número de ligações/mensagens e histórico de WhatsApp
+    dependem da planilha que o cliente ainda vai disponibilizar — aparecerão aqui após a integração.
+    Histórico de e-mail por contato não é exposto pela API do RD Station Marketing (só há analytics agregado por campanha/workflow).
+  </footer>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <h2 id="modalName">—</h2>
+        <div class="sub" id="modalEmail">—</div>
+      </div>
+      <button class="modal-close" id="modalClose">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div>
+        <div class="section-title">Contato</div>
+        <div class="kv-grid" id="modalContact"></div>
+      </div>
+      <div>
+        <div class="section-title">Custom fields (RD Marketing)</div>
+        <div class="kv-grid" id="modalCustomFields"></div>
+      </div>
+      <div>
+        <div class="section-title">Histórico de conversão / iscas</div>
+        <div class="event-list" id="modalEvents"></div>
+      </div>
+      <div class="notice">
+        Produto, tabulação de perda, número de ligações/mensagens e histórico de WhatsApp ainda
+        não estão disponíveis — dependem da planilha de CRM que o cliente vai fornecer. Venda e
+        estágio no funil já vêm do RD Station Marketing.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
