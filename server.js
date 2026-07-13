@@ -6,9 +6,11 @@ const basicAuth = require('express-basic-auth');
 
 const db = require('./lib/db');
 const { runSync, enrichContactByEmail } = require('./lib/sync');
+const { runSheetSync } = require('./lib/sheets-sync');
 
 const PORT = process.env.PORT || 3000;
 const SYNC_INTERVAL_MINUTES = Number(process.env.SYNC_INTERVAL_MINUTES) || 30;
+const SHEET_SYNC_INTERVAL_MINUTES = Number(process.env.SHEET_SYNC_INTERVAL_MINUTES) || 15;
 
 const DASHBOARD_USER = process.env.DASHBOARD_USER;
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD;
@@ -58,6 +60,20 @@ function parseContactRow(row) {
     last_sale_value: row.last_sale_value,
     events_summary_raw: row.events_summary_raw,
     source: row.source,
+    id_crm: row.id_crm,
+    consultor: row.consultor,
+    canal_sheet: row.canal_sheet,
+    tipo_trafego_sheet: row.tipo_trafego_sheet,
+    publico_sheet: row.publico_sheet,
+    criativo_sheet: row.criativo_sheet,
+    posicao_anuncio_sheet: row.posicao_anuncio_sheet,
+    falado: row.falado,
+    tabulacao_perda: row.tabulacao_perda,
+    observacao_comercial: row.observacao_comercial,
+    fluxo_mensagens: row.fluxo_mensagens,
+    sheet_tab_origem: row.sheet_tab_origem,
+    sheet_data_interacao: row.sheet_data_interacao,
+    sheet_last_synced_at: row.sheet_last_synced_at,
   };
 }
 
@@ -79,6 +95,22 @@ async function triggerSync() {
 
 triggerSync();
 setInterval(triggerSync, SYNC_INTERVAL_MINUTES * 60 * 1000);
+
+let syncingSheet = false;
+async function triggerSheetSync() {
+  if (syncingSheet) return;
+  syncingSheet = true;
+  try {
+    await runSheetSync();
+  } catch (e) {
+    console.error('Erro no sync da planilha:', e);
+  } finally {
+    syncingSheet = false;
+  }
+}
+
+triggerSheetSync();
+setInterval(triggerSheetSync, SHEET_SYNC_INTERVAL_MINUTES * 60 * 1000);
 
 /* =========================
    APP
@@ -138,6 +170,10 @@ app.get('/api/sync-status', (req, res) => {
     last_sync_duration_ms: Number(db.getMeta('last_sync_duration_ms')) || null,
     total_contacts: Number(db.getMeta('total_contacts')) || 0,
     syncing,
+    sheet_last_sync_at: db.getMeta('sheet_last_sync_at'),
+    sheet_last_sync_matched: Number(db.getMeta('sheet_last_sync_matched')) || 0,
+    sheet_last_sync_not_found: Number(db.getMeta('sheet_last_sync_not_found')) || 0,
+    syncingSheet,
   });
 });
 

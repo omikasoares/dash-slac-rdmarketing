@@ -238,6 +238,7 @@ function run() {
       last_sale_date: get(COLS.last_sale_date) || null,
       last_sale_value: get(COLS.last_sale_value) || null,
       events_summary_raw: get(COLS.events_summary_raw) || null,
+      id_crm: customFields.cf_id_crm || null,
     });
     imported += 1;
   }

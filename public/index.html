@@ -169,7 +169,7 @@ footer{ margin-top:18px; font-size:12px; color:var(--ink-muted) }
   </header>
 
   <div class="toolbar">
-    <input id="searchInput" type="text" placeholder="Buscar por nome ou email…"/>
+    <input id="searchInput" type="text" placeholder="Buscar por nome, email ou ID CRM…"/>
     <select id="stageFilter">
       <option value="">Todos os estágios</option>
     </select>
@@ -183,6 +183,7 @@ footer{ margin-top:18px; font-size:12px; color:var(--ink-muted) }
       <table>
         <thead>
           <tr>
+            <th>ID CRM</th>
             <th>Nome</th>
             <th>Email</th>
             <th>Telefone</th>
@@ -191,6 +192,9 @@ footer{ margin-top:18px; font-size:12px; color:var(--ink-muted) }
             <th>Origem (canal / campanha)</th>
             <th>Estágio</th>
             <th>Venda</th>
+            <th>Falado</th>
+            <th>Tabulação</th>
+            <th>Consultor</th>
             <th>Tags</th>
           </tr>
         </thead>
@@ -200,9 +204,10 @@ footer{ margin-top:18px; font-size:12px; color:var(--ink-muted) }
   </div>
 
   <footer>
-    Campos como produto, tabulação de perda, número de ligações/mensagens e histórico de WhatsApp
-    dependem da planilha que o cliente ainda vai disponibilizar — aparecerão aqui após a integração.
-    Histórico de e-mail por contato não é exposto pela API do RD Station Marketing (só há analytics agregado por campanha/workflow).
+    Falado/não falado, tabulação de perda, canal/público/criativo e consultor vêm da planilha de
+    CRM (sincronizada a cada 15 min). Produto, número de ligações/mensagens e histórico de WhatsApp
+    ainda não estão disponíveis. Histórico de e-mail por contato não é exposto pela API do RD Station
+    Marketing (só há analytics agregado por campanha/workflow).
   </footer>
 </div>
 
@@ -228,10 +233,12 @@ footer{ margin-top:18px; font-size:12px; color:var(--ink-muted) }
         <div class="section-title">Histórico de conversão / iscas</div>
         <div class="event-list" id="modalEvents"></div>
       </div>
+      <div>
+        <div class="section-title">Comercial (planilha de CRM)</div>
+        <div class="kv-grid" id="modalSheet"></div>
+      </div>
       <div class="notice">
-        Produto, tabulação de perda, número de ligações/mensagens e histórico de WhatsApp ainda
-        não estão disponíveis — dependem da planilha de CRM que o cliente vai fornecer. Venda e
-        estágio no funil já vêm do RD Station Marketing.
+        Produto, número de ligações/mensagens e histórico de WhatsApp ainda não estão disponíveis.
       </div>
     </div>
   </div>

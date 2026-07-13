@@ -16,6 +16,7 @@ const els = {
   modalContact: document.getElementById('modalContact'),
   modalCustomFields: document.getElementById('modalCustomFields'),
   modalEvents: document.getElementById('modalEvents'),
+  modalSheet: document.getElementById('modalSheet'),
 };
 
 function formatDateTime(iso) {
@@ -54,7 +55,7 @@ function renderTable() {
 
   filtered = leads.filter((l) => {
     if (search) {
-      const haystack = `${l.name || ''} ${l.email || ''}`.toLowerCase();
+      const haystack = `${l.name || ''} ${l.email || ''} ${l.id_crm || ''}`.toLowerCase();
       if (!haystack.includes(search)) return false;
     }
     if (stage && l.lifecycle_stage !== stage) return false;
@@ -71,6 +72,7 @@ function renderTable() {
         : '<span class="empty-cell">—</span>';
       return `
         <tr data-uuid="${l.uuid}">
+          <td>${cell(escapeHtml(l.id_crm))}</td>
           <td>${escapeHtml(l.name || '—')}</td>
           <td>${escapeHtml(l.email || '—')}</td>
           <td>${cell(escapeHtml(l.mobile_phone || l.personal_phone || ''))}</td>
@@ -79,6 +81,9 @@ function renderTable() {
           <td>${cell(escapeHtml(origin))}</td>
           <td><span class="pill ${stageClass(l.lifecycle_stage)}">${escapeHtml(l.lifecycle_stage || 'Lead')}</span></td>
           <td>${vendaHtml}</td>
+          <td>${cell(escapeHtml(l.falado))}</td>
+          <td>${cell(escapeHtml(l.tabulacao_perda))}</td>
+          <td>${cell(escapeHtml(l.consultor))}</td>
           <td>${tagsHtml || '<span class="empty-cell">—</span>'}</td>
         </tr>
       `;
@@ -138,6 +143,29 @@ function openModal(uuid) {
         .join('')
     : '<span class="empty-cell">Nenhum custom field preenchido.</span>';
 
+  const sheetFields = [
+    ['Consultor', l.consultor],
+    ['Falado', l.falado],
+    ['Tabulação de perda', l.tabulacao_perda],
+    ['Canal', l.canal_sheet],
+    ['Tipo de tráfego', l.tipo_trafego_sheet],
+    ['Público', l.publico_sheet],
+    ['Criativo', l.criativo_sheet],
+    ['Posição do anúncio', l.posicao_anuncio_sheet],
+    ['Fluxo de mensagens', l.fluxo_mensagens],
+    ['Última interação (planilha)', l.sheet_data_interacao],
+    ['Aba de origem', l.sheet_tab_origem],
+  ];
+  const hasSheetData = sheetFields.some(([, v]) => v);
+  els.modalSheet.innerHTML = hasSheetData
+    ? sheetFields
+        .map(([k, v]) => `<div><div class="k">${k}</div><div class="v">${escapeHtml(v || '—')}</div></div>`)
+        .join('') +
+      (l.observacao_comercial
+        ? `<div style="grid-column:1/-1"><div class="k">Observação</div><div class="v">${escapeHtml(l.observacao_comercial)}</div></div>`
+        : '')
+    : '<span class="empty-cell">Sem correspondência na planilha de CRM.</span>';
+
   const events = l.events || [];
   if (events.length) {
     els.modalEvents.innerHTML = events
@@ -188,9 +216,13 @@ async function loadSyncStatus() {
   const status = await res.json();
   const stale = status.last_sync_at && Date.now() - new Date(status.last_sync_at).getTime() > 2 * 60 * 60 * 1000;
   els.syncDot.classList.toggle('stale', !!stale || status.syncing);
-  els.syncLabel.textContent = status.syncing
+  const rdLabel = status.syncing
     ? `sincronizando… (${status.total_contacts} leads)`
     : `${status.total_contacts} leads · atualizado ${timeAgo(status.last_sync_at)}`;
+  const sheetLabel = status.syncingSheet
+    ? 'planilha: sincronizando…'
+    : `planilha: ${status.sheet_last_sync_matched} casados, atualizado ${timeAgo(status.sheet_last_sync_at)}`;
+  els.syncLabel.textContent = `${rdLabel} · ${sheetLabel}`;
 }
 
 els.searchInput.addEventListener('input', renderTable);

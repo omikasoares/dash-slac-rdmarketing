@@ -19,15 +19,54 @@ oportunidade, dono do lead, total de conversões e um resumo bruto dos
 partir desse export — útil porque a base é grande (dezenas de milhares de
 contatos) e o primeiro sync via API, contato por contato, demoraria muito.
 
-**Fora do escopo por enquanto** (aguardando planilha que o cliente vai
-disponibilizar): produto, tabulação de perda, número de ligações/mensagens,
-falado/não falado, e histórico de mensagens WhatsApp. As colunas já existem
-na UI, vazias, prontas para o merge futuro (por email ou `cf_id_crm`).
+**Vem da planilha de CRM/comercial** (Google Sheets, sincronizada a cada
+`SHEET_SYNC_INTERVAL_MINUTES`, ver seção abaixo): consultor responsável,
+falado/não falado, tabulação de perda, canal/tipo de tráfego/público/criativo
+(quando presente na aba) e observações do atendimento comercial.
+
+**Ainda fora do escopo** (não encontrado em nenhuma fonte disponível):
+produto comprado, número de ligações/mensagens como contagem limpa (só como
+texto livre na observação), e histórico de mensagens WhatsApp.
 
 **Limitação conhecida da API do RD Station Marketing**: não existe endpoint
 de histórico de e-mail (abertura/clique) por contato individual — só
 analytics agregado por campanha/workflow. Isso é uma limitação da API, não
 do dashboard.
+
+## Planilha de CRM/comercial (Google Sheets)
+
+O time de vendas mantém uma planilha própria (uma aba por mês, ex. "Junho
+2026", "Julho 2026") com o acompanhamento de ligações/tabulação de cada
+lead. `lib/sheets-sync.js` lê todas as abas periodicamente e faz merge com
+os contatos do RD Station.
+
+**Chave de junção**: o "ID" da planilha (número no final da URL
+`.../prospectos/editar/{id}`) é o mesmo valor do custom field `cf_id_crm` do
+RD Station — confirmado manualmente contra dados reais (~95% das linhas da
+planilha casam com um contato do RD).
+
+**Nomes de coluna variam entre abas** (bagunça normal de planilha mantida à
+mão) — o mapeamento em `lib/sheets-sync.js` usa aliases, não posição fixa.
+Se o time de vendas criar uma aba nova com nomes de coluna muito diferentes
+dos já mapeados, os campos dessa aba específica simplesmente não são
+capturados (sem erro) até o alias ser adicionado ao código.
+
+**Regra de "mais recente vence"**: se o mesmo lead aparece em mais de uma
+aba/linha, fica valendo a interação com a data mais recente (fallback: mês
+da aba, quando a data não estiver preenchida).
+
+### Configuração
+
+1. Reaproveite um OAuth Client ID (Desktop app) já existente no Google Cloud
+   com a Sheets API ativada, ou crie um novo em
+   [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials).
+   Se for reaproveitar, gere uma **chave secreta nova** (`+ Add secret`) em
+   vez de tentar recuperar a original (o Google não permite ver de novo).
+2. Preencha `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` no `.env`.
+3. Rode `npm run get-google-tokens`, autorize com a conta que tem acesso à
+   planilha, e copie o `refresh_token` para `GOOGLE_REFRESH_TOKEN`.
+4. Preencha `CRM_SHEET_ID` com o ID da planilha (parte da URL entre
+   `/d/` e `/edit`).
 
 ## Atualização em tempo real (webhook de nova conversão)
 
@@ -57,11 +96,17 @@ de segurança.
   contatos da base de Leads", e só busca detalhe + eventos de conversão de
   contatos novos ou com `last_conversion_date` alterado.
 - `lib/db.js` — SQLite (módulo nativo `node:sqlite`), schema da tabela `contacts`.
+- `lib/sheets-client.js` — cliente OAuth2 do Google Sheets (leitura).
+- `lib/sheets-sync.js` — lê todas as abas da planilha de CRM, mapeia colunas
+  por alias, e faz merge com os contatos via `cf_id_crm`.
 - `public/` — frontend (tabela + filtros + modal de histórico), vanilla JS.
 - `scripts/get-rd-tokens.js` — obtenção única do `refresh_token` do RD.
+- `scripts/get-google-tokens.js` — obtenção única do `refresh_token` do Google.
 - `scripts/import-csv.js` — bootstrap rápido a partir da exportação CSV do
   RD Station (ver seção abaixo).
-- `scripts/run-sync.js` — roda um ciclo de sync manualmente (`npm run sync`).
+- `scripts/run-sync.js` — roda um ciclo de sync do RD manualmente (`npm run sync`).
+- `scripts/run-sheet-sync.js` — roda um ciclo de sync da planilha manualmente
+  (`npm run sync-sheet`).
 
 ## Rodando localmente
 
@@ -130,21 +175,26 @@ deste código.
 
 ### 2. Deploy key na VPS (acesso de leitura ao repo)
 
+Use um nome de arquivo específico pra essa chave (evita conflito se a VPS já
+tiver outras deploy keys de outros projetos, ex. Dash Contabilista Play):
+
 ```bash
-ssh-keygen -t ed25519 -C "dash-slac-rdmarketing-vps"
-cat ~/.ssh/id_ed25519.pub
+ssh-keygen -t ed25519 -C "dash-slac-rdmarketing-vps" -f ~/.ssh/dash_slac_rdmarketing_deploy -N ""
+cat ~/.ssh/dash_slac_rdmarketing_deploy.pub
 ```
 
 No GitHub: `Settings → Deploy keys → Add deploy key`, cole a chave pública
-(sem marcar "Allow write access"). Teste: `ssh -T git@github.com`.
+(sem marcar "Allow write access"). Teste:
+`ssh -i ~/.ssh/dash_slac_rdmarketing_deploy -T git@github.com`.
 
 ### 3. Clonar o projeto na VPS
 
 ```bash
 mkdir -p /root/projects
 cd /root/projects
-git clone git@github.com:<seu-usuario>/dash-slac-rdmarketing.git dash-slac-rdmarketing
+GIT_SSH_COMMAND="ssh -i ~/.ssh/dash_slac_rdmarketing_deploy" git clone git@github.com:<seu-usuario>/dash-slac-rdmarketing.git dash-slac-rdmarketing
 cd dash-slac-rdmarketing
+git config core.sshCommand "ssh -i ~/.ssh/dash_slac_rdmarketing_deploy"
 chmod +x deploy.sh
 ```
 
@@ -161,6 +211,12 @@ RD_SEGMENTATION_ID=15113383
 SYNC_INTERVAL_MINUTES=30
 DASHBOARD_USER=...
 DASHBOARD_PASSWORD=...
+WEBHOOK_SECRET=...
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REFRESH_TOKEN=...
+CRM_SHEET_ID=...
+SHEET_SYNC_INTERVAL_MINUTES=15
 ```
 
 Como a imagem `dash-slac-rdmarketing:latest` ainda não existe na primeira
