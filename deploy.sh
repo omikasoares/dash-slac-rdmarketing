@@ -3,7 +3,7 @@ set -e
 
 cd /root/projects/dash-slac-rdmarketing
 
-git pull origin main
+git pull --ff-only origin main
 
 docker build -t dash-slac-rdmarketing:latest .
 
