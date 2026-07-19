@@ -24,7 +24,7 @@ if (!WEBHOOK_SECRET) {
 }
 
 /** Tenta extrair o email do payload do webhook do RD Station, cujo formato
- * exato não é documentado publicamente — checa os formatos mais prováveis. */
+ * exato nao e documentado publicamente — checa os formatos mais provaveis. */
 function extractEmailFromWebhookBody(body) {
   return (
     body?.email ||
@@ -36,6 +36,7 @@ function extractEmailFromWebhookBody(body) {
 }
 
 function parseContactRow(row) {
+  const customFields = row.custom_fields ? JSON.parse(row.custom_fields) : {};
   return {
     uuid: row.uuid,
     name: row.name,
@@ -47,7 +48,7 @@ function parseContactRow(row) {
     lifecycle_stage: row.lifecycle_stage,
     origin: row.origin,
     tags: row.tags ? JSON.parse(row.tags) : [],
-    custom_fields: row.custom_fields ? JSON.parse(row.custom_fields) : {},
+    custom_fields: customFields,
     events: row.events ? JSON.parse(row.events) : [],
     last_synced_at: row.last_synced_at,
     public_url: row.public_url,
@@ -59,6 +60,7 @@ function parseContactRow(row) {
     last_sale_date: row.last_sale_date,
     last_sale_value: row.last_sale_value,
     events_summary_raw: row.events_summary_raw,
+    produtos_comprados: row.produtos_comprados ? JSON.parse(row.produtos_comprados) : [],
     source: row.source,
     id_crm: row.id_crm,
     consultor: row.consultor,
@@ -67,19 +69,22 @@ function parseContactRow(row) {
     publico_sheet: row.publico_sheet,
     criativo_sheet: row.criativo_sheet,
     posicao_anuncio_sheet: row.posicao_anuncio_sheet,
+    campanha_converteu_sheet: row.campanha_converteu_sheet,
     falado: row.falado,
     tabulacao_perda: row.tabulacao_perda,
     observacao_comercial: row.observacao_comercial,
     fluxo_mensagens: row.fluxo_mensagens,
+    numero_contatos_estimado: row.numero_contatos_estimado,
     sheet_tab_origem: row.sheet_tab_origem,
     sheet_data_interacao: row.sheet_data_interacao,
     sheet_last_synced_at: row.sheet_last_synced_at,
+    canal_resolvido: customFields.cf_utm_source || row.canal_sheet || null,
+    campanha_resolvida: customFields.cf_utm_campaign || row.campanha_converteu_sheet || null,
+    criativo_resolvido: customFields.cf_utm_content || row.criativo_sheet || null,
+    publico_resolvido: customFields.cf_utm_term || row.publico_sheet || null,
   };
 }
 
-/* =========================
-   SYNC EM SEGUNDO PLANO
-========================= */
 let syncing = false;
 async function triggerSync() {
   if (syncing) return;
@@ -112,18 +117,10 @@ async function triggerSheetSync() {
 triggerSheetSync();
 setInterval(triggerSheetSync, SHEET_SYNC_INTERVAL_MINUTES * 60 * 1000);
 
-/* =========================
-   APP
-========================= */
 const app = express();
 
 app.get('/healthz', (req, res) => res.send('ok'));
 
-// Webhook de "Nova conversão" do RD Station (Conta > Integrações > Webhooks).
-// Sem Basic Auth (o RD não envia credenciais) — protegido por um secret na
-// própria URL. Não confiamos no conteúdo do payload em si (formato não é
-// documentado publicamente); usamos só o email como sinal pra buscar os
-// dados completos e atualizados direto na API.
 app.post('/webhook/rd-conversion/:secret', express.json(), async (req, res) => {
   if (req.params.secret !== WEBHOOK_SECRET) {
     return res.status(404).end();
@@ -173,6 +170,7 @@ app.get('/api/sync-status', (req, res) => {
     sheet_last_sync_at: db.getMeta('sheet_last_sync_at'),
     sheet_last_sync_matched: Number(db.getMeta('sheet_last_sync_matched')) || 0,
     sheet_last_sync_not_found: Number(db.getMeta('sheet_last_sync_not_found')) || 0,
+    sheet_last_sync_invalid_id: Number(db.getMeta('sheet_last_sync_invalid_id')) || 0,
     syncingSheet,
   });
 });

@@ -1,16 +1,16 @@
 /**
- * Importa a exportação de contatos do RD Station Marketing (Contatos > Exportar)
+ * Importa a exportacao de contatos do RD Station Marketing (Contatos > Exportar)
  * pra bootstrapar o SQLite rapidamente, sem depender do sync a frio via API.
  *
  * O export do RD vem em UTF-16LE, delimitado por TAB, com aspas no estilo CSV
- * pra campos que contêm quebra de linha (ex: Biografia).
+ * pra campos que contem quebra de linha (ex: Biografia).
  *
  * Uso:
  *   node scripts/import-csv.js caminho/para/export.csv
  *
- * Contatos importados ficam com synced_last_conversion_date = NULL, então o
- * sync em segundo plano (lib/sync.js) automaticamente busca o histórico
- * detalhado de conversão (com atribuição de tráfego) na próxima rodada —
+ * Contatos importados ficam com synced_last_conversion_date = NULL, entao o
+ * sync em segundo plano (lib/sync.js) automaticamente busca o historico
+ * detalhado de conversao (com atribuicao de trafego) na proxima rodada —
  * exatamente como trataria um contato novo.
  */
 require('dotenv').config();
@@ -23,12 +23,12 @@ if (!filePath) {
   process.exit(1);
 }
 
-/** Detecta BOM UTF-16LE/BE; senão assume UTF-8. */
+/** Detecta BOM UTF-16LE/BE; senao assume UTF-8. */
 function readTextAutoEncoding(path) {
   const buf = fs.readFileSync(path);
   if (buf[0] === 0xff && buf[1] === 0xfe) return buf.toString('utf16le').slice(1);
   if (buf[0] === 0xfe && buf[1] === 0xff) {
-    // UTF-16BE: node não decodifica nativamente, então trocamos os bytes.
+    // UTF-16BE: node nao decodifica nativamente, entao trocamos os bytes.
     const swapped = Buffer.alloc(buf.length - 2);
     for (let i = 2; i < buf.length; i += 2) {
       swapped[i - 2] = buf[i + 1];
@@ -40,7 +40,7 @@ function readTextAutoEncoding(path) {
   return buf.toString('utf8');
 }
 
-/** Parser TSV com suporte a células entre aspas contendo \t/\n (estilo CSV). */
+/** Parser TSV com suporte a celulas entre aspas contendo \t/\n (estilo CSV). */
 function parseTsv(text) {
   const rows = [];
   let row = [];
@@ -100,7 +100,7 @@ function parseTsv(text) {
   return rows.filter((r) => r.length > 1 || r[0] !== '');
 }
 
-// Colunas padrão -> nome do header no export do RD.
+// Colunas padrao -> nome do header no export do RD.
 const COLS = {
   email: 'Email',
   name: 'Nome',
@@ -123,7 +123,7 @@ const COLS = {
 
 // Custom fields (cf_*) -> nome do header no export do RD. A ordem importa
 // pras duas colunas "Qual seu ramo de atuação?" (nomes duplicados no export;
-// resolvidas por posição, não por nome).
+// resolvidas por posicao, nao por nome).
 const CUSTOM_FIELD_COLS = {
   cf_escolaridade: 'Escolaridade',
   cf_forms: 'Formulário',
@@ -163,6 +163,23 @@ function buildColumnIndex(headers) {
     index[h].push(i);
   });
   return index;
+}
+
+/**
+ * Extrai produtos comprados a partir do resumo bruto de eventos do CSV
+ * ("Eventos (Ultimos 100)", segmentos separados por " / "). Mesmo padrao
+ * "Compra aprovada - {produto}" usado em lib/sync.js pro caminho via API;
+ * aqui e best-effort sobre o resumo truncado do export.
+ */
+function extractProdutosFromSummary(summaryRaw) {
+  if (!summaryRaw) return [];
+  const parts = summaryRaw.split('/').map((s) => s.trim());
+  const produtos = [];
+  for (const p of parts) {
+    const match = /^compra aprovada\s*[-:]\s*(.+)$/i.exec(p);
+    if (match) produtos.push(match[1].trim());
+  }
+  return [...new Set(produtos)];
 }
 
 function run() {
@@ -217,6 +234,7 @@ function run() {
 
     const tagsRaw = get(COLS.tags);
     const tags = tagsRaw ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean) : [];
+    const eventsSummaryRaw = get(COLS.events_summary_raw) || null;
 
     db.upsertContactFromCsv({
       uuid,
@@ -237,7 +255,8 @@ function run() {
       last_opportunity_date: get(COLS.last_opportunity_date) || null,
       last_sale_date: get(COLS.last_sale_date) || null,
       last_sale_value: get(COLS.last_sale_value) || null,
-      events_summary_raw: get(COLS.events_summary_raw) || null,
+      events_summary_raw: eventsSummaryRaw,
+      produtos_comprados: JSON.stringify(extractProdutosFromSummary(eventsSummaryRaw)),
       id_crm: customFields.cf_id_crm || null,
     });
     imported += 1;
