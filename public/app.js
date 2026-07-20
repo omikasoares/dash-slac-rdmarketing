@@ -1,7 +1,13 @@
 let leads = [];
 let filtered = [];
+let syncStatusCache = {};
+let activeMonth = '';
+
+const MONTH_LABELS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 
 const els = {
+  kpiGrid: document.getElementById('kpiGrid'),
+  monthPills: document.getElementById('monthPills'),
   tableBody: document.getElementById('tableBody'),
   searchInput: document.getElementById('searchInput'),
   stageFilter: document.getElementById('stageFilter'),
@@ -48,12 +54,102 @@ function cell(value) {
   return value ? value : '<span class="empty-cell">—</span>';
 }
 
+function escapeHtml(str) {
+  return String(str == null ? '' : str).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+/* ===== Mês (derivado de created_at) ===== */
+
+function monthKeyFromIso(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d)) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthLabelFromKey(key) {
+  const [y, m] = key.split('-').map(Number);
+  return `${MONTH_LABELS_PT[m - 1]}/${String(y).slice(2)}`;
+}
+
+function renderMonthPills() {
+  const keys = [...new Set(leads.map((l) => monthKeyFromIso(l.created_at)).filter(Boolean))].sort();
+
+  const buttons = [`<button class="month-pill${activeMonth === '' ? ' active' : ''}" data-month="">Todos</button>`].concat(
+    keys.map((k) => `<button class="month-pill${activeMonth === k ? ' active' : ''}" data-month="${k}">${escapeHtml(monthLabelFromKey(k))}</button>`)
+  );
+
+  els.monthPills.innerHTML = buttons.join('');
+  els.monthPills.querySelectorAll('.month-pill').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      activeMonth = btn.dataset.month;
+      renderMonthPills();
+      renderKpis();
+      renderTable();
+    });
+  });
+}
+
+/* ===== KPIs ===== */
+
+function renderKpis() {
+  const scoped = activeMonth ? leads.filter((l) => monthKeyFromIso(l.created_at) === activeMonth) : leads;
+  const total = scoped.length;
+  const clientes = scoped.filter((l) => (l.lifecycle_stage || '').toLowerCase().includes('cliente')).length;
+  const comVenda = scoped.filter((l) => l.last_sale_date).length;
+  const taxa = total ? Math.round((clientes / total) * 1000) / 10 : 0;
+  const invalidId = syncStatusCache.sheet_last_sync_invalid_id || 0;
+
+  const cards = [
+    {
+      icon: 'blue', emoji: '👥', label: 'Total de leads',
+      value: total.toLocaleString('pt-BR'),
+      sub: activeMonth ? monthLabelFromKey(activeMonth) : 'toda a base',
+    },
+    {
+      icon: 'aqua', emoji: '🎓', label: 'Clientes (alunos)',
+      value: clientes.toLocaleString('pt-BR'),
+      sub: `${taxa}% da base`,
+    },
+    {
+      icon: 'yellow', emoji: '💰', label: 'Com venda registrada',
+      value: comVenda.toLocaleString('pt-BR'),
+      sub: 'data/valor no RD Station',
+    },
+    {
+      icon: 'violet', emoji: '⚠️', label: 'IDs inválidos na planilha',
+      value: invalidId.toLocaleString('pt-BR'),
+      sub: 'precisam de correção manual',
+    },
+  ];
+
+  els.kpiGrid.innerHTML = cards
+    .map(
+      (c) => `
+    <div class="kpi-card">
+      <div class="kpi-icon ${c.icon}">${c.emoji}</div>
+      <div>
+        <div class="kpi-label">${escapeHtml(c.label)}</div>
+        <div class="kpi-value">${c.value}</div>
+        <div class="kpi-sub">${escapeHtml(c.sub)}</div>
+      </div>
+    </div>
+  `
+    )
+    .join('');
+}
+
+/* ===== Tabela ===== */
+
 function renderTable() {
   const search = els.searchInput.value.trim().toLowerCase();
   const stage = els.stageFilter.value;
   const tag = els.tagFilter.value;
 
   filtered = leads.filter((l) => {
+    if (activeMonth && monthKeyFromIso(l.created_at) !== activeMonth) return false;
     if (search) {
       const haystack = `${l.name || ''} ${l.email || ''} ${l.id_crm || ''}`.toLowerCase();
       if (!haystack.includes(search)) return false;
@@ -65,7 +161,7 @@ function renderTable() {
 
   els.tableBody.innerHTML = filtered
     .map((l) => {
-      const origin = [l.origin].filter(Boolean).join(' · ');
+      const origin = [l.canal_resolvido, l.campanha_resolvida].filter(Boolean).join(' · ') || l.origin || '';
       const tagsHtml = (l.tags || []).map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join('');
       const vendaHtml = l.last_sale_date
         ? `<span class="pill venda-sim">Sim</span> <span class="attrib">${formatDateTime(l.last_sale_date)}</span>`
@@ -95,12 +191,6 @@ function renderTable() {
   });
 }
 
-function escapeHtml(str) {
-  return String(str == null ? '' : str).replace(/[&<>"']/g, (c) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
-}
-
 function populateFilters() {
   const stages = [...new Set(leads.map((l) => l.lifecycle_stage).filter(Boolean))].sort();
   const tags = [...new Set(leads.flatMap((l) => l.tags || []))].sort();
@@ -114,6 +204,8 @@ function populateFilters() {
     tags.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
 }
 
+/* ===== Modal ===== */
+
 function openModal(uuid) {
   const l = leads.find((x) => x.uuid === uuid);
   if (!l) return;
@@ -126,9 +218,14 @@ function openModal(uuid) {
     ['Criado em', formatDateTime(l.created_at)],
     ['Última conversão', formatDateTime(l.last_conversion_date)],
     ['Estágio', l.lifecycle_stage],
-    ['Origem', l.origin],
+    ['Origem da conversão', l.origin],
+    ['Canal (resolvido)', l.canal_resolvido],
+    ['Campanha (resolvida)', l.campanha_resolvida],
+    ['Criativo (resolvido)', l.criativo_resolvido],
+    ['Público (resolvido)', l.publico_resolvido],
     ['Total de conversões', l.total_conversions],
     ['Data da venda', formatDateTime(l.last_sale_date)],
+    ['Produto(s) comprado(s)', (l.produtos_comprados || []).join(', ')],
     ['Data da oportunidade', formatDateTime(l.last_opportunity_date)],
     ['Dono do lead', l.owner_email],
   ]
@@ -147,12 +244,14 @@ function openModal(uuid) {
     ['Consultor', l.consultor],
     ['Falado', l.falado],
     ['Tabulação de perda', l.tabulacao_perda],
-    ['Canal', l.canal_sheet],
-    ['Tipo de tráfego', l.tipo_trafego_sheet],
-    ['Público', l.publico_sheet],
-    ['Criativo', l.criativo_sheet],
-    ['Posição do anúncio', l.posicao_anuncio_sheet],
+    ['Nº de contatos (estimado)', l.numero_contatos_estimado],
     ['Fluxo de mensagens', l.fluxo_mensagens],
+    ['Canal (planilha)', l.canal_sheet],
+    ['Tipo de tráfego (planilha)', l.tipo_trafego_sheet],
+    ['Público (planilha)', l.publico_sheet],
+    ['Criativo (planilha)', l.criativo_sheet],
+    ['Posição do anúncio (planilha)', l.posicao_anuncio_sheet],
+    ['Campanha que converteu', l.campanha_converteu_sheet],
     ['Última interação (planilha)', l.sheet_data_interacao],
     ['Aba de origem', l.sheet_tab_origem],
   ];
@@ -204,25 +303,36 @@ function closeModal() {
   els.overlay.classList.remove('open');
 }
 
+/* ===== Carregamento ===== */
+
 async function loadLeads() {
   const res = await fetch('/api/leads');
   leads = await res.json();
   populateFilters();
+  renderMonthPills();
+  renderKpis();
   renderTable();
 }
 
 async function loadSyncStatus() {
   const res = await fetch('/api/sync-status');
   const status = await res.json();
+  syncStatusCache = status;
+
   const stale = status.last_sync_at && Date.now() - new Date(status.last_sync_at).getTime() > 2 * 60 * 60 * 1000;
   els.syncDot.classList.toggle('stale', !!stale || status.syncing);
   const rdLabel = status.syncing
     ? `sincronizando… (${status.total_contacts} leads)`
     : `${status.total_contacts} leads · atualizado ${timeAgo(status.last_sync_at)}`;
+  const invalidNote = status.sheet_last_sync_invalid_id > 0
+    ? ` · ${status.sheet_last_sync_invalid_id} com ID inválido na planilha`
+    : '';
   const sheetLabel = status.syncingSheet
     ? 'planilha: sincronizando…'
-    : `planilha: ${status.sheet_last_sync_matched} casados, atualizado ${timeAgo(status.sheet_last_sync_at)}`;
+    : `planilha: ${status.sheet_last_sync_matched} casados${invalidNote}, atualizado ${timeAgo(status.sheet_last_sync_at)}`;
   els.syncLabel.textContent = `${rdLabel} · ${sheetLabel}`;
+
+  renderKpis();
 }
 
 els.searchInput.addEventListener('input', renderTable);
