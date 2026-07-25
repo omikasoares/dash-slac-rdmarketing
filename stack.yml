@@ -2,6 +2,32 @@ version: "3.7"
 
 services:
 
+  dash-slac-postgres:
+    image: postgres:16-alpine
+
+    networks:
+      - AutzNet
+
+    environment:
+      - TZ=America/Sao_Paulo
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+
+    volumes:
+      - dash-slac-postgres-data:/var/lib/postgresql/data
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
   dash-slac-rdmarketing:
     image: dash-slac-rdmarketing:latest
 
@@ -15,19 +41,24 @@ services:
       - RD_CLIENT_SECRET=${RD_CLIENT_SECRET}
       - RD_REFRESH_TOKEN=${RD_REFRESH_TOKEN}
       - RD_SEGMENTATION_ID=${RD_SEGMENTATION_ID}
-      - SYNC_INTERVAL_MINUTES=${SYNC_INTERVAL_MINUTES}
+      - RD_MAX_REQUESTS_PER_MINUTE=${RD_MAX_REQUESTS_PER_MINUTE}
+      - SYNC_CONCURRENCY=${SYNC_CONCURRENCY}
+      - SYNC_BUSINESS_START=${SYNC_BUSINESS_START}
+      - SYNC_BUSINESS_END=${SYNC_BUSINESS_END}
+      - SYNC_INTERVAL_BUSINESS_MINUTES=${SYNC_INTERVAL_BUSINESS_MINUTES}
+      - SYNC_INTERVAL_OFFHOURS_MINUTES=${SYNC_INTERVAL_OFFHOURS_MINUTES}
       - DASHBOARD_USER=${DASHBOARD_USER}
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD}
       - WEBHOOK_SECRET=${WEBHOOK_SECRET}
-      - DB_PATH=/app/data/leads.db
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@dash-slac-postgres:5432/${POSTGRES_DB}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - GOOGLE_REFRESH_TOKEN=${GOOGLE_REFRESH_TOKEN}
       - CRM_SHEET_ID=${CRM_SHEET_ID}
       - SHEET_SYNC_INTERVAL_MINUTES=${SHEET_SYNC_INTERVAL_MINUTES}
 
-    volumes:
-      - dash-slac-rdmarketing-data:/app/data
+    depends_on:
+      - dash-slac-postgres
 
     deploy:
       mode: replicated
@@ -54,4 +85,4 @@ networks:
     name: AutzNet
 
 volumes:
-  dash-slac-rdmarketing-data:
+  dash-slac-postgres-data:
