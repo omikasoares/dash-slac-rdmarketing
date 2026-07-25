@@ -311,10 +311,7 @@ footer{ margin-top:18px; font-size:12px; color:var(--ink-muted); max-width:1360p
   Station Marketing (só há analytics agregado por campanha/workflow). "Alunos por curso" conta
   quem tem a tag curso:* correspondente (não depende do estágio no funil). O filtro de período
   (mês ou intervalo de datas) usa a data de criação do lead no RD Station. O filtro "Só ativos"
-  esconde quem está com Status para comunicação por email = false, exceto se aparecer na aba da
-  planilha de CRM do mês corrente — esse status só vem da reimportação periódica do CSV do RD
-  Station (a API não expõe esse campo por contato), então quem nunca passou por um CSV fica com
-  status desconhecido e é tratado como ativo por padrão.
+  esconde quem tem a tag status:inativo no RD Station (mantida manualmente pelo time).
 </footer>
 
 <div class="overlay" id="overlay">
