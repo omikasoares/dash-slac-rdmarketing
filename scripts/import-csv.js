@@ -1,6 +1,6 @@
 /**
  * Importa a exportacao de contatos do RD Station Marketing (Contatos > Exportar)
- * pra bootstrapar o SQLite rapidamente, sem depender do sync a frio via API.
+ * pra bootstrapar o Postgres rapidamente, sem depender do sync a frio via API.
  *
  * O export do RD vem em UTF-16LE, delimitado por TAB, com aspas no estilo CSV
  * pra campos que contem quebra de linha (ex: Biografia).
@@ -12,6 +12,11 @@
  * sync em segundo plano (lib/sync.js) automaticamente busca o historico
  * detalhado de conversao (com atribuicao de trafego) na proxima rodada —
  * exatamente como trataria um contato novo.
+ *
+ * "Status para comunicação por email" (true/false) so existe nesse export —
+ * a API do RD nao devolve esse campo por contato. Reimporte esse CSV de
+ * tempos em tempos pra manter o filtro de ativos/inativos do dashboard
+ * atualizado.
  */
 require('dotenv').config();
 const fs = require('fs');
@@ -119,6 +124,7 @@ const COLS = {
   last_conversion_date: 'Data da última conversão',
   origin: 'Origem da última conversão',
   events_summary_raw: 'Eventos (Últimos 100)',
+  email_status: 'Status para comunicação por email',
 };
 
 // Custom fields (cf_*) -> nome do header no export do RD. A ordem importa
@@ -182,7 +188,16 @@ function extractProdutosFromSummary(summaryRaw) {
   return [...new Set(produtos)];
 }
 
-function run() {
+/** "true"/"false" (texto do export) -> boolean; qualquer outra coisa (célula
+ * vazia, valor inesperado) -> null (desconhecido, tratado como ativo). */
+function parseEmailStatusAtivo(raw) {
+  const v = String(raw || '').trim().toLowerCase();
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  return null;
+}
+
+async function run() {
   console.log('Lendo e decodificando arquivo...');
   const text = readTextAutoEncoding(filePath);
   console.log(`Arquivo lido: ${text.length} caracteres. Parseando TSV...`);
@@ -200,69 +215,79 @@ function run() {
   let imported = 0;
   let skippedNoUuid = 0;
 
-  for (let r = 1; r < rows.length; r++) {
-    if (r % 5000 === 0) console.log(`Progresso: ${r}/${rows.length - 1} linhas...`);
-    const cells = rows[r];
-    const get = (header) => {
-      const idxs = colIndex[header];
-      if (!idxs || idxs.length === 0) return '';
-      return (cells[idxs[0]] || '').trim();
-    };
+  await db.withTransaction(async (client) => {
+    for (let r = 1; r < rows.length; r++) {
+      if (r % 5000 === 0) console.log(`Progresso: ${r}/${rows.length - 1} linhas...`);
+      const cells = rows[r];
+      const get = (header) => {
+        const idxs = colIndex[header];
+        if (!idxs || idxs.length === 0) return '';
+        return (cells[idxs[0]] || '').trim();
+      };
 
-    const publicUrl = get(COLS.public_url);
-    const uuid = extractUuid(publicUrl);
-    if (!uuid) {
-      skippedNoUuid += 1;
-      continue;
-    }
+      const publicUrl = get(COLS.public_url);
+      const uuid = extractUuid(publicUrl);
+      if (!uuid) {
+        skippedNoUuid += 1;
+        continue;
+      }
 
-    const customFields = {};
-    for (const [cfKey, header] of Object.entries(CUSTOM_FIELD_COLS)) {
-      const value = get(header);
-      if (value) customFields[cfKey] = value;
-    }
-    // As duas colunas "Qual seu ramo de atuação?" mapeiam para dois cf_ diferentes,
-    // na ordem em que aparecem no export.
-    if (ramoAtuacaoCols[0] !== undefined) {
-      const v = (cells[ramoAtuacaoCols[0]] || '').trim();
-      if (v) customFields.cf_ramo_atuacao_form_novo = v;
-    }
-    if (ramoAtuacaoCols[1] !== undefined) {
-      const v = (cells[ramoAtuacaoCols[1]] || '').trim();
-      if (v) customFields.cf_ramo_de_atuacao = v;
-    }
+      const customFields = {};
+      for (const [cfKey, header] of Object.entries(CUSTOM_FIELD_COLS)) {
+        const value = get(header);
+        if (value) customFields[cfKey] = value;
+      }
+      // As duas colunas "Qual seu ramo de atuação?" mapeiam para dois cf_ diferentes,
+      // na ordem em que aparecem no export.
+      if (ramoAtuacaoCols[0] !== undefined) {
+        const v = (cells[ramoAtuacaoCols[0]] || '').trim();
+        if (v) customFields.cf_ramo_atuacao_form_novo = v;
+      }
+      if (ramoAtuacaoCols[1] !== undefined) {
+        const v = (cells[ramoAtuacaoCols[1]] || '').trim();
+        if (v) customFields.cf_ramo_de_atuacao = v;
+      }
 
-    const tagsRaw = get(COLS.tags);
-    const tags = tagsRaw ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean) : [];
-    const eventsSummaryRaw = get(COLS.events_summary_raw) || null;
+      const tagsRaw = get(COLS.tags);
+      const tags = tagsRaw ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean) : [];
+      const eventsSummaryRaw = get(COLS.events_summary_raw) || null;
 
-    db.upsertContactFromCsv({
-      uuid,
-      name: get(COLS.name) || null,
-      email: get(COLS.email) || null,
-      personal_phone: get(COLS.personal_phone) || null,
-      mobile_phone: get(COLS.mobile_phone) || null,
-      tags: JSON.stringify(tags),
-      lifecycle_stage: get(COLS.lifecycle_stage) || null,
-      origin: get(COLS.origin) || null,
-      last_conversion_date: get(COLS.last_conversion_date) || null,
-      custom_fields: JSON.stringify(customFields),
-      public_url: publicUrl || null,
-      owner_email: get(COLS.owner_email) || null,
-      total_conversions: get(COLS.total_conversions) ? Number(get(COLS.total_conversions)) : null,
-      first_conversion_date: get(COLS.first_conversion_date) || null,
-      first_conversion_origin: get(COLS.first_conversion_origin) || null,
-      last_opportunity_date: get(COLS.last_opportunity_date) || null,
-      last_sale_date: get(COLS.last_sale_date) || null,
-      last_sale_value: get(COLS.last_sale_value) || null,
-      events_summary_raw: eventsSummaryRaw,
-      produtos_comprados: JSON.stringify(extractProdutosFromSummary(eventsSummaryRaw)),
-      id_crm: customFields.cf_id_crm || null,
-    });
-    imported += 1;
-  }
+      await db.upsertContactFromCsv(
+        {
+          uuid,
+          name: get(COLS.name) || null,
+          email: get(COLS.email) || null,
+          personal_phone: get(COLS.personal_phone) || null,
+          mobile_phone: get(COLS.mobile_phone) || null,
+          tags: JSON.stringify(tags),
+          lifecycle_stage: get(COLS.lifecycle_stage) || null,
+          origin: get(COLS.origin) || null,
+          last_conversion_date: get(COLS.last_conversion_date) || null,
+          custom_fields: JSON.stringify(customFields),
+          public_url: publicUrl || null,
+          owner_email: get(COLS.owner_email) || null,
+          total_conversions: get(COLS.total_conversions) ? Number(get(COLS.total_conversions)) : null,
+          first_conversion_date: get(COLS.first_conversion_date) || null,
+          first_conversion_origin: get(COLS.first_conversion_origin) || null,
+          last_opportunity_date: get(COLS.last_opportunity_date) || null,
+          last_sale_date: get(COLS.last_sale_date) || null,
+          last_sale_value: get(COLS.last_sale_value) || null,
+          events_summary_raw: eventsSummaryRaw,
+          produtos_comprados: JSON.stringify(extractProdutosFromSummary(eventsSummaryRaw)),
+          id_crm: customFields.cf_id_crm || null,
+          email_status_ativo: parseEmailStatusAtivo(get(COLS.email_status)),
+        },
+        client
+      );
+      imported += 1;
+    }
+  });
 
   console.log(`Importação concluída: ${imported} contatos gravados, ${skippedNoUuid} linhas sem UUID (URL pública) ignoradas.`);
+  process.exit(0);
 }
 
-run();
+run().catch((e) => {
+  console.error('Erro na importação:', e);
+  process.exit(1);
+});

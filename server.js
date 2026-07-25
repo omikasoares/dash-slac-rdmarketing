@@ -9,7 +9,16 @@ const { runSync, enrichContactByEmail } = require('./lib/sync');
 const { runSheetSync } = require('./lib/sheets-sync');
 
 const PORT = process.env.PORT || 3000;
-const SYNC_INTERVAL_MINUTES = Number(process.env.SYNC_INTERVAL_MINUTES) || 30;
+
+// Sync do RD Station: intervalo curto em horario comercial, mais espacado
+// fora dele. Tudo em America/Sao_Paulo via Intl (nao depende do TZ do SO/
+// tzdata da imagem, funciona igual em qualquer container).
+const SYNC_TZ = 'America/Sao_Paulo';
+const SYNC_BUSINESS_START = process.env.SYNC_BUSINESS_START || '07:50';
+const SYNC_BUSINESS_END = process.env.SYNC_BUSINESS_END || '19:00';
+const SYNC_INTERVAL_BUSINESS_MINUTES = Number(process.env.SYNC_INTERVAL_BUSINESS_MINUTES) || 5;
+const SYNC_INTERVAL_OFFHOURS_MINUTES = Number(process.env.SYNC_INTERVAL_OFFHOURS_MINUTES) || 60;
+
 const SHEET_SYNC_INTERVAL_MINUTES = Number(process.env.SHEET_SYNC_INTERVAL_MINUTES) || 15;
 
 const DASHBOARD_USER = process.env.DASHBOARD_USER;
@@ -36,7 +45,9 @@ function extractEmailFromWebhookBody(body) {
 }
 
 function parseContactRow(row) {
-  const customFields = row.custom_fields ? JSON.parse(row.custom_fields) : {};
+  // tags / custom_fields / events / produtos_comprados sao JSONB no Postgres
+  // — o driver `pg` ja devolve array/objeto parseado, sem JSON.parse aqui.
+  const customFields = row.custom_fields || {};
   return {
     uuid: row.uuid,
     name: row.name,
@@ -47,9 +58,9 @@ function parseContactRow(row) {
     last_conversion_date: row.last_conversion_date,
     lifecycle_stage: row.lifecycle_stage,
     origin: row.origin,
-    tags: row.tags ? JSON.parse(row.tags) : [],
+    tags: row.tags || [],
     custom_fields: customFields,
-    events: row.events ? JSON.parse(row.events) : [],
+    events: row.events || [],
     last_synced_at: row.last_synced_at,
     public_url: row.public_url,
     owner_email: row.owner_email,
@@ -60,7 +71,7 @@ function parseContactRow(row) {
     last_sale_date: row.last_sale_date,
     last_sale_value: row.last_sale_value,
     events_summary_raw: row.events_summary_raw,
-    produtos_comprados: row.produtos_comprados ? JSON.parse(row.produtos_comprados) : [],
+    produtos_comprados: row.produtos_comprados || [],
     source: row.source,
     id_crm: row.id_crm,
     consultor: row.consultor,
@@ -78,6 +89,7 @@ function parseContactRow(row) {
     sheet_tab_origem: row.sheet_tab_origem,
     sheet_data_interacao: row.sheet_data_interacao,
     sheet_last_synced_at: row.sheet_last_synced_at,
+    email_status_ativo: row.email_status_ativo,
     canal_resolvido: customFields.cf_utm_source || row.canal_sheet || null,
     campanha_resolvida: customFields.cf_utm_campaign || row.campanha_converteu_sheet || null,
     criativo_resolvido: customFields.cf_utm_content || row.criativo_sheet || null,
@@ -98,8 +110,42 @@ async function triggerSync() {
   }
 }
 
+/** Minutos desde meia-noite, no fuso informado, sem depender de TZ do SO. */
+function nowMinutesInTz(tz) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+  const h = Number(parts.find((p) => p.type === 'hour').value);
+  const m = Number(parts.find((p) => p.type === 'minute').value);
+  return h * 60 + m;
+}
+
+function parseHHMM(str) {
+  const [h, m] = String(str).split(':').map(Number);
+  return h * 60 + (m || 0);
+}
+
+const businessStartMin = parseHHMM(SYNC_BUSINESS_START);
+const businessEndMin = parseHHMM(SYNC_BUSINESS_END);
+
+function isBusinessHours() {
+  const mins = nowMinutesInTz(SYNC_TZ);
+  return mins >= businessStartMin && mins < businessEndMin;
+}
+
+function scheduleNextSync() {
+  const intervalMinutes = isBusinessHours() ? SYNC_INTERVAL_BUSINESS_MINUTES : SYNC_INTERVAL_OFFHOURS_MINUTES;
+  setTimeout(async () => {
+    await triggerSync();
+    scheduleNextSync();
+  }, intervalMinutes * 60 * 1000);
+}
+
 triggerSync();
-setInterval(triggerSync, SYNC_INTERVAL_MINUTES * 60 * 1000);
+scheduleNextSync();
 
 let syncingSheet = false;
 async function triggerSheetSync() {
@@ -151,28 +197,51 @@ app.use(
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/api/leads', (req, res) => {
+app.get('/api/leads', async (req, res) => {
   try {
-    const leads = db.getAllContacts().map(parseContactRow);
-    res.json(leads);
+    const rows = await db.getAllContacts();
+    res.json(rows.map(parseContactRow));
   } catch (e) {
     console.error('Erro ao listar leads:', e);
     res.status(500).json({ message: e.message });
   }
 });
 
-app.get('/api/sync-status', (req, res) => {
-  res.json({
-    last_sync_at: db.getMeta('last_sync_at'),
-    last_sync_duration_ms: Number(db.getMeta('last_sync_duration_ms')) || null,
-    total_contacts: Number(db.getMeta('total_contacts')) || 0,
-    syncing,
-    sheet_last_sync_at: db.getMeta('sheet_last_sync_at'),
-    sheet_last_sync_matched: Number(db.getMeta('sheet_last_sync_matched')) || 0,
-    sheet_last_sync_not_found: Number(db.getMeta('sheet_last_sync_not_found')) || 0,
-    sheet_last_sync_invalid_id: Number(db.getMeta('sheet_last_sync_invalid_id')) || 0,
-    syncingSheet,
-  });
+app.get('/api/sync-status', async (req, res) => {
+  try {
+    const [
+      lastSyncAt,
+      lastSyncDurationMs,
+      totalContacts,
+      sheetLastSyncAt,
+      sheetLastSyncMatched,
+      sheetLastSyncNotFound,
+      sheetLastSyncInvalidId,
+    ] = await Promise.all([
+      db.getMeta('last_sync_at'),
+      db.getMeta('last_sync_duration_ms'),
+      db.getMeta('total_contacts'),
+      db.getMeta('sheet_last_sync_at'),
+      db.getMeta('sheet_last_sync_matched'),
+      db.getMeta('sheet_last_sync_not_found'),
+      db.getMeta('sheet_last_sync_invalid_id'),
+    ]);
+
+    res.json({
+      last_sync_at: lastSyncAt,
+      last_sync_duration_ms: Number(lastSyncDurationMs) || null,
+      total_contacts: Number(totalContacts) || 0,
+      syncing,
+      sheet_last_sync_at: sheetLastSyncAt,
+      sheet_last_sync_matched: Number(sheetLastSyncMatched) || 0,
+      sheet_last_sync_not_found: Number(sheetLastSyncNotFound) || 0,
+      sheet_last_sync_invalid_id: Number(sheetLastSyncInvalidId) || 0,
+      syncingSheet,
+    });
+  } catch (e) {
+    console.error('Erro ao ler status de sync:', e);
+    res.status(500).json({ message: e.message });
+  }
 });
 
 app.post('/api/sync-now', (req, res) => {
