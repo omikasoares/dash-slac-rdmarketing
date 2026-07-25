@@ -7,7 +7,6 @@ let dateTo = '';
 let statusFilterMode = 'active';
 
 const MONTH_LABELS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-const MONTH_NAMES_FULL_PT = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 
 const els = {
   kpiGrid: document.getElementById('kpiGrid'),
@@ -70,30 +69,15 @@ function escapeHtml(str) {
   }[c]));
 }
 
-function normalizeText(s) {
-  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-}
-
 /* ===== Ativos/inativos =====
-   Inativo (email_status_ativo === false) só aparece se estiver na aba da
-   planilha de CRM do mês corrente (indício de que voltou a ser trabalhado
-   pelo comercial mesmo estando marcado como opt-out de email). Status
-   desconhecido (contato nunca passou por reimportação de CSV — a API do RD
-   não expõe esse campo) é tratado como ativo. */
+   Inativo = lead tem a tag status:inativo (mantida manualmente no RD
+   Station). Vem via API todo ciclo de sync, sem depender de CSV. */
 
-function isCurrentMonthSheetTab(tabName) {
-  if (!tabName) return false;
-  const now = new Date();
-  const monthName = normalizeText(MONTH_NAMES_FULL_PT[now.getMonth()]);
-  const year = String(now.getFullYear());
-  const normalized = normalizeText(tabName);
-  return normalized.includes(monthName) && normalized.includes(year);
-}
+const TAG_INATIVO = 'status:inativo';
 
 function passesActiveFilter(l) {
   if (statusFilterMode === 'all') return true;
-  if (l.email_status_ativo === false) return isCurrentMonthSheetTab(l.sheet_tab_origem);
-  return true;
+  return !(l.tags || []).includes(TAG_INATIVO);
 }
 
 /* ===== Escopo de período (mes selecionado OU intervalo de datas —
@@ -380,14 +364,11 @@ function openModal(uuid) {
   els.modalName.textContent = l.name || '—';
   els.modalEmail.textContent = l.email || '—';
 
-  const statusEmailLabel = l.email_status_ativo === false ? 'Não (inativo)' : l.email_status_ativo === true ? 'Sim' : 'Desconhecido (sem CSV importado)';
-
   els.modalContact.innerHTML = [
     ['Telefone', l.mobile_phone || l.personal_phone],
     ['Criado em', formatDateTime(l.created_at)],
     ['Última conversão', formatDateTime(l.last_conversion_date)],
     ['Estágio', l.lifecycle_stage],
-    ['Status p/ comunicação por email', statusEmailLabel],
     ['Origem da conversão', l.origin],
     ['Canal (resolvido)', l.canal_resolvido],
     ['Campanha (resolvida)', l.campanha_resolvida],
