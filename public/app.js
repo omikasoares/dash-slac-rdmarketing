@@ -2,6 +2,8 @@ let leads = [];
 let filtered = [];
 let syncStatusCache = {};
 let activeMonth = '';
+let dateFrom = '';
+let dateTo = '';
 
 const MONTH_LABELS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 
@@ -9,11 +11,14 @@ const els = {
   kpiGrid: document.getElementById('kpiGrid'),
   monthPills: document.getElementById('monthPills'),
   cursoList: document.getElementById('cursoList'),
+  periodoList: document.getElementById('periodoList'),
   tableBody: document.getElementById('tableBody'),
   searchInput: document.getElementById('searchInput'),
   stageFilter: document.getElementById('stageFilter'),
   tagFilter: document.getElementById('tagFilter'),
   tagExcludeFilter: document.getElementById('tagExcludeFilter'),
+  dateFrom: document.getElementById('dateFrom'),
+  dateTo: document.getElementById('dateTo'),
   syncDot: document.getElementById('syncDot'),
   syncLabel: document.getElementById('syncLabel'),
   syncNowBtn: document.getElementById('syncNowBtn'),
@@ -62,7 +67,8 @@ function escapeHtml(str) {
   }[c]));
 }
 
-/* ===== Mês (derivado de created_at) ===== */
+/* ===== Escopo de período (mes selecionado OU intervalo de datas —
+   mutuamente exclusivos: escolher um limpa o outro) ===== */
 
 function monthKeyFromIso(iso) {
   if (!iso) return null;
@@ -76,21 +82,52 @@ function monthLabelFromKey(key) {
   return `${MONTH_LABELS_PT[m - 1]}/${String(y).slice(2)}`;
 }
 
+function inDateRange(iso) {
+  if (!iso) return false;
+  const d = iso.slice(0, 10);
+  if (dateFrom && d < dateFrom) return false;
+  if (dateTo && d > dateTo) return false;
+  return true;
+}
+
+function inPeriodScope(l) {
+  if (dateFrom || dateTo) return inDateRange(l.created_at);
+  if (activeMonth) return monthKeyFromIso(l.created_at) === activeMonth;
+  return true;
+}
+
+function getScopedLeads() {
+  return leads.filter(inPeriodScope);
+}
+
+function clearDateRange() {
+  dateFrom = '';
+  dateTo = '';
+  els.dateFrom.value = '';
+  els.dateTo.value = '';
+}
+
+function refreshPeriodViews() {
+  renderMonthPills();
+  renderKpis();
+  renderCursoChart();
+  renderPeriodoChart();
+  renderTable();
+}
+
 function renderMonthPills() {
   const keys = [...new Set(leads.map((l) => monthKeyFromIso(l.created_at)).filter(Boolean))].sort();
 
-  const buttons = [`<button class="month-pill${activeMonth === '' ? ' active' : ''}" data-month="">Todos</button>`].concat(
-    keys.map((k) => `<button class="month-pill${activeMonth === k ? ' active' : ''}" data-month="${k}">${escapeHtml(monthLabelFromKey(k))}</button>`)
+  const buttons = [`<button class="month-pill${!dateFrom && !dateTo && activeMonth === '' ? ' active' : ''}" data-month="">Todos</button>`].concat(
+    keys.map((k) => `<button class="month-pill${!dateFrom && !dateTo && activeMonth === k ? ' active' : ''}" data-month="${k}">${escapeHtml(monthLabelFromKey(k))}</button>`)
   );
 
   els.monthPills.innerHTML = buttons.join('');
   els.monthPills.querySelectorAll('.month-pill').forEach((btn) => {
     btn.addEventListener('click', () => {
       activeMonth = btn.dataset.month;
-      renderMonthPills();
-      renderKpis();
-      renderCursoChart();
-      renderTable();
+      clearDateRange();
+      refreshPeriodViews();
     });
   });
 }
@@ -98,18 +135,22 @@ function renderMonthPills() {
 /* ===== KPIs ===== */
 
 function renderKpis() {
-  const scoped = activeMonth ? leads.filter((l) => monthKeyFromIso(l.created_at) === activeMonth) : leads;
+  const scoped = getScopedLeads();
   const total = scoped.length;
   const clientes = scoped.filter((l) => (l.lifecycle_stage || '').toLowerCase().includes('cliente')).length;
   const comVenda = scoped.filter((l) => l.last_sale_date).length;
   const taxa = total ? Math.round((clientes / total) * 1000) / 10 : 0;
   const invalidId = syncStatusCache.sheet_last_sync_invalid_id || 0;
 
+  const periodLabel = dateFrom || dateTo
+    ? `${dateFrom || '…'} a ${dateTo || '…'}`
+    : (activeMonth ? monthLabelFromKey(activeMonth) : 'toda a base');
+
   const cards = [
     {
       icon: 'blue', emoji: '👥', label: 'Total de leads',
       value: total.toLocaleString('pt-BR'),
-      sub: activeMonth ? monthLabelFromKey(activeMonth) : 'toda a base',
+      sub: periodLabel,
     },
     {
       icon: 'aqua', emoji: '🎓', label: 'Clientes (alunos)',
@@ -147,7 +188,7 @@ function renderKpis() {
 /* ===== Alunos por curso ===== */
 
 function renderCursoChart() {
-  const scoped = activeMonth ? leads.filter((l) => monthKeyFromIso(l.created_at) === activeMonth) : leads;
+  const scoped = getScopedLeads();
   const counts = {};
   scoped.forEach((l) => {
     (l.tags || []).forEach((t) => {
@@ -157,7 +198,7 @@ function renderCursoChart() {
   const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
 
   if (!entries.length) {
-    els.cursoList.innerHTML = '<span class="curso-empty">Nenhuma tag curso:* encontrada na base ainda.</span>';
+    els.cursoList.innerHTML = '<span class="bar-empty">Nenhuma tag curso:* encontrada nesse período.</span>';
     return;
   }
 
@@ -168,21 +209,62 @@ function renderCursoChart() {
       const active = els.tagFilter.value === tag;
       const pct = Math.max(4, Math.round((count / max) * 100));
       return `
-        <div class="curso-row${active ? ' active' : ''}" data-tag="${escapeHtml(tag)}">
-          <div class="curso-name">${escapeHtml(name)}</div>
-          <div class="curso-track"><div class="curso-fill" style="width:${pct}%"></div></div>
-          <div class="curso-count">${count.toLocaleString('pt-BR')}</div>
+        <div class="bar-row${active ? ' active' : ''}" data-tag="${escapeHtml(tag)}">
+          <div class="bar-name">${escapeHtml(name)}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+          <div class="bar-count">${count.toLocaleString('pt-BR')}</div>
         </div>
       `;
     })
     .join('');
 
-  els.cursoList.querySelectorAll('.curso-row').forEach((row) => {
+  els.cursoList.querySelectorAll('.bar-row').forEach((row) => {
     row.addEventListener('click', () => {
       const tag = row.dataset.tag;
       els.tagFilter.value = els.tagFilter.value === tag ? '' : tag;
       renderTable();
       renderCursoChart();
+    });
+  });
+}
+
+/* ===== Leads por período ===== */
+
+function renderPeriodoChart() {
+  const counts = {};
+  leads.forEach((l) => {
+    const key = monthKeyFromIso(l.created_at);
+    if (key) counts[key] = (counts[key] || 0) + 1;
+  });
+  const keys = Object.keys(counts).sort();
+
+  if (!keys.length) {
+    els.periodoList.innerHTML = '<span class="bar-empty">Sem data de criação disponível ainda.</span>';
+    return;
+  }
+
+  const max = Math.max(...keys.map((k) => counts[k]));
+  els.periodoList.innerHTML = keys
+    .map((key) => {
+      const count = counts[key];
+      const active = !dateFrom && !dateTo && activeMonth === key;
+      const pct = Math.max(4, Math.round((count / max) * 100));
+      return `
+        <div class="bar-row${active ? ' active' : ''}" data-month="${key}">
+          <div class="bar-name">${escapeHtml(monthLabelFromKey(key))}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+          <div class="bar-count">${count.toLocaleString('pt-BR')}</div>
+        </div>
+      `;
+    })
+    .join('');
+
+  els.periodoList.querySelectorAll('.bar-row').forEach((row) => {
+    row.addEventListener('click', () => {
+      const key = row.dataset.month;
+      clearDateRange();
+      activeMonth = activeMonth === key ? '' : key;
+      refreshPeriodViews();
     });
   });
 }
@@ -196,7 +278,7 @@ function renderTable() {
   const tagExclude = els.tagExcludeFilter.value;
 
   filtered = leads.filter((l) => {
-    if (activeMonth && monthKeyFromIso(l.created_at) !== activeMonth) return false;
+    if (!inPeriodScope(l)) return false;
     if (search) {
       const haystack = `${l.name || ''} ${l.email || ''} ${l.id_crm || ''}`.toLowerCase();
       if (!haystack.includes(search)) return false;
@@ -361,10 +443,7 @@ async function loadLeads() {
   const res = await fetch('/api/leads');
   leads = await res.json();
   populateFilters();
-  renderMonthPills();
-  renderKpis();
-  renderCursoChart();
-  renderTable();
+  refreshPeriodViews();
 }
 
 async function loadSyncStatus() {
@@ -395,6 +474,16 @@ els.tagFilter.addEventListener('change', () => {
   renderCursoChart();
 });
 els.tagExcludeFilter.addEventListener('change', renderTable);
+els.dateFrom.addEventListener('change', () => {
+  dateFrom = els.dateFrom.value;
+  activeMonth = '';
+  refreshPeriodViews();
+});
+els.dateTo.addEventListener('change', () => {
+  dateTo = els.dateTo.value;
+  activeMonth = '';
+  refreshPeriodViews();
+});
 els.modalClose.addEventListener('click', closeModal);
 els.overlay.addEventListener('click', (e) => {
   if (e.target === els.overlay) closeModal();

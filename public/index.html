@@ -104,26 +104,28 @@ body{ min-height:100vh }
 .kpi-value{ font-size:26px; font-weight:800; line-height:1; }
 .kpi-sub{ font-size:12px; color:var(--ink-muted); margin-top:5px; }
 
-/* ===== Alunos por curso ===== */
-.curso-card{ margin-bottom:22px; }
-.curso-card .card-title{
+/* ===== Cards de insight (Alunos por curso / Leads por periodo) ===== */
+.insight-row{ display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; margin-bottom:22px; }
+.insight-card .card-title{
   font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
   color:var(--ink-muted); padding:16px 20px 2px;
 }
-.curso-list{ padding:6px 12px 16px; display:flex; flex-direction:column; gap:1px; }
-.curso-row{
-  display:grid; grid-template-columns:130px 1fr 44px; align-items:center; gap:12px;
+.bar-list{ padding:6px 12px 16px; display:flex; flex-direction:column; gap:1px; }
+.bar-row{
+  display:grid; grid-template-columns:88px 1fr 44px; align-items:center; gap:12px;
   padding:7px 8px; cursor:pointer; border-radius:8px;
 }
-.curso-row:hover{ background:var(--surface); }
-.curso-row.active{ background:color-mix(in srgb, var(--violet) 10%, transparent); }
-.curso-row.active .curso-name{ color:var(--violet); font-weight:700; }
-.curso-name{ font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.curso-track{ height:7px; border-radius:999px; background:var(--gridline); overflow:hidden; }
-.curso-fill{ height:100%; border-radius:999px; background:var(--blue); }
-.curso-row.active .curso-fill{ background:var(--violet); }
-.curso-count{ font-size:12.5px; color:var(--ink-muted); text-align:right; font-variant-numeric:tabular-nums; }
-.curso-empty{ padding:0 20px 16px; display:block; color:var(--ink-muted); font-size:13px; }
+.bar-row:hover{ background:var(--surface); }
+.bar-row.active{ background:color-mix(in srgb, var(--violet) 10%, transparent); }
+.bar-row.active .bar-name{ color:var(--violet); font-weight:700; }
+.bar-name{ font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.bar-track{ height:7px; border-radius:999px; background:var(--gridline); overflow:hidden; }
+.bar-fill{ height:100%; border-radius:999px; background:var(--blue); }
+.bar-row.active .bar-fill{ background:var(--violet); }
+.bar-count{ font-size:12.5px; color:var(--ink-muted); text-align:right; font-variant-numeric:tabular-nums; }
+.bar-empty{ padding:0 20px 16px; display:block; color:var(--ink-muted); font-size:13px; }
+
+#cursoList .bar-row{ grid-template-columns:130px 1fr 44px; }
 
 /* ===== Filtros por mes (pills) ===== */
 .month-pills{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
@@ -134,12 +136,14 @@ body{ min-height:100vh }
 .month-pill:hover{ border-color:var(--ink-muted) }
 .month-pill.active{ background:var(--lime); border-color:var(--lime); color:#0b0b0b; }
 
-.toolbar{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+.toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
 .toolbar input, .toolbar select{
   border:1px solid var(--border); background:var(--card); color:var(--ink);
   border-radius:8px; padding:9px 12px; font-size:14px; min-width:180px;
 }
 .toolbar input{ flex:1; min-width:240px }
+.toolbar input[type=date]{ flex:none; min-width:0; width:150px; color:var(--ink-2); }
+.toolbar .date-sep{ color:var(--ink-muted); font-size:12.5px; }
 
 .card{
   background:var(--card); border:1px solid var(--border); border-radius:12px;
@@ -238,9 +242,15 @@ footer{ margin-top:18px; font-size:12px; color:var(--ink-muted); max-width:1360p
 <div class="wrap">
   <div class="kpi-grid" id="kpiGrid"></div>
 
-  <div class="card curso-card">
-    <div class="card-title">Alunos por curso</div>
-    <div class="curso-list" id="cursoList"></div>
+  <div class="insight-row">
+    <div class="card insight-card">
+      <div class="card-title">Alunos por curso</div>
+      <div class="bar-list" id="cursoList"></div>
+    </div>
+    <div class="card insight-card">
+      <div class="card-title">Leads por período</div>
+      <div class="bar-list" id="periodoList"></div>
+    </div>
   </div>
 
   <div class="month-pills" id="monthPills"></div>
@@ -256,6 +266,9 @@ footer{ margin-top:18px; font-size:12px; color:var(--ink-muted); max-width:1360p
     <select id="tagExcludeFilter">
       <option value="">Sem excluir por tag</option>
     </select>
+    <input id="dateFrom" type="date" title="Criado a partir de"/>
+    <span class="date-sep">até</span>
+    <input id="dateTo" type="date" title="Criado até"/>
   </div>
 
   <div class="card">
@@ -292,7 +305,8 @@ footer{ margin-top:18px; font-size:12px; color:var(--ink-muted); max-width:1360p
   (best-effort, não é uma contagem exata) — histórico de mensagens de WhatsApp continua disponível
   só como texto na Observação. Histórico de e-mail por contato não é exposto pela API do RD
   Station Marketing (só há analytics agregado por campanha/workflow). "Alunos por curso" conta
-  quem tem a tag curso:* correspondente (não depende do estágio no funil).
+  quem tem a tag curso:* correspondente (não depende do estágio no funil). O filtro de período
+  (mês ou intervalo de datas) usa a data de criação do lead no RD Station.
 </footer>
 
 <div class="overlay" id="overlay">
