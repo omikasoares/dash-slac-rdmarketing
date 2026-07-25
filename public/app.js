@@ -8,10 +8,12 @@ const MONTH_LABELS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','
 const els = {
   kpiGrid: document.getElementById('kpiGrid'),
   monthPills: document.getElementById('monthPills'),
+  cursoList: document.getElementById('cursoList'),
   tableBody: document.getElementById('tableBody'),
   searchInput: document.getElementById('searchInput'),
   stageFilter: document.getElementById('stageFilter'),
   tagFilter: document.getElementById('tagFilter'),
+  tagExcludeFilter: document.getElementById('tagExcludeFilter'),
   syncDot: document.getElementById('syncDot'),
   syncLabel: document.getElementById('syncLabel'),
   syncNowBtn: document.getElementById('syncNowBtn'),
@@ -87,6 +89,7 @@ function renderMonthPills() {
       activeMonth = btn.dataset.month;
       renderMonthPills();
       renderKpis();
+      renderCursoChart();
       renderTable();
     });
   });
@@ -141,12 +144,56 @@ function renderKpis() {
     .join('');
 }
 
+/* ===== Alunos por curso ===== */
+
+function renderCursoChart() {
+  const scoped = activeMonth ? leads.filter((l) => monthKeyFromIso(l.created_at) === activeMonth) : leads;
+  const counts = {};
+  scoped.forEach((l) => {
+    (l.tags || []).forEach((t) => {
+      if (t.startsWith('curso:')) counts[t] = (counts[t] || 0) + 1;
+    });
+  });
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+  if (!entries.length) {
+    els.cursoList.innerHTML = '<span class="curso-empty">Nenhuma tag curso:* encontrada na base ainda.</span>';
+    return;
+  }
+
+  const max = entries[0][1];
+  els.cursoList.innerHTML = entries
+    .map(([tag, count]) => {
+      const name = tag.slice('curso:'.length);
+      const active = els.tagFilter.value === tag;
+      const pct = Math.max(4, Math.round((count / max) * 100));
+      return `
+        <div class="curso-row${active ? ' active' : ''}" data-tag="${escapeHtml(tag)}">
+          <div class="curso-name">${escapeHtml(name)}</div>
+          <div class="curso-track"><div class="curso-fill" style="width:${pct}%"></div></div>
+          <div class="curso-count">${count.toLocaleString('pt-BR')}</div>
+        </div>
+      `;
+    })
+    .join('');
+
+  els.cursoList.querySelectorAll('.curso-row').forEach((row) => {
+    row.addEventListener('click', () => {
+      const tag = row.dataset.tag;
+      els.tagFilter.value = els.tagFilter.value === tag ? '' : tag;
+      renderTable();
+      renderCursoChart();
+    });
+  });
+}
+
 /* ===== Tabela ===== */
 
 function renderTable() {
   const search = els.searchInput.value.trim().toLowerCase();
   const stage = els.stageFilter.value;
   const tag = els.tagFilter.value;
+  const tagExclude = els.tagExcludeFilter.value;
 
   filtered = leads.filter((l) => {
     if (activeMonth && monthKeyFromIso(l.created_at) !== activeMonth) return false;
@@ -156,6 +203,7 @@ function renderTable() {
     }
     if (stage && l.lifecycle_stage !== stage) return false;
     if (tag && !(l.tags || []).includes(tag)) return false;
+    if (tagExclude && (l.tags || []).includes(tagExclude)) return false;
     return true;
   });
 
@@ -201,6 +249,10 @@ function populateFilters() {
 
   els.tagFilter.innerHTML =
     '<option value="">Todas as tags</option>' +
+    tags.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+
+  els.tagExcludeFilter.innerHTML =
+    '<option value="">Sem excluir por tag</option>' +
     tags.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
 }
 
@@ -311,6 +363,7 @@ async function loadLeads() {
   populateFilters();
   renderMonthPills();
   renderKpis();
+  renderCursoChart();
   renderTable();
 }
 
@@ -337,7 +390,11 @@ async function loadSyncStatus() {
 
 els.searchInput.addEventListener('input', renderTable);
 els.stageFilter.addEventListener('change', renderTable);
-els.tagFilter.addEventListener('change', renderTable);
+els.tagFilter.addEventListener('change', () => {
+  renderTable();
+  renderCursoChart();
+});
+els.tagExcludeFilter.addEventListener('change', renderTable);
 els.modalClose.addEventListener('click', closeModal);
 els.overlay.addEventListener('click', (e) => {
   if (e.target === els.overlay) closeModal();

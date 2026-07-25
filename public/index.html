@@ -104,6 +104,27 @@ body{ min-height:100vh }
 .kpi-value{ font-size:26px; font-weight:800; line-height:1; }
 .kpi-sub{ font-size:12px; color:var(--ink-muted); margin-top:5px; }
 
+/* ===== Alunos por curso ===== */
+.curso-card{ margin-bottom:22px; }
+.curso-card .card-title{
+  font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+  color:var(--ink-muted); padding:16px 20px 2px;
+}
+.curso-list{ padding:6px 12px 16px; display:flex; flex-direction:column; gap:1px; }
+.curso-row{
+  display:grid; grid-template-columns:130px 1fr 44px; align-items:center; gap:12px;
+  padding:7px 8px; cursor:pointer; border-radius:8px;
+}
+.curso-row:hover{ background:var(--surface); }
+.curso-row.active{ background:color-mix(in srgb, var(--violet) 10%, transparent); }
+.curso-row.active .curso-name{ color:var(--violet); font-weight:700; }
+.curso-name{ font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.curso-track{ height:7px; border-radius:999px; background:var(--gridline); overflow:hidden; }
+.curso-fill{ height:100%; border-radius:999px; background:var(--blue); }
+.curso-row.active .curso-fill{ background:var(--violet); }
+.curso-count{ font-size:12.5px; color:var(--ink-muted); text-align:right; font-variant-numeric:tabular-nums; }
+.curso-empty{ padding:0 20px 16px; display:block; color:var(--ink-muted); font-size:13px; }
+
 /* ===== Filtros por mes (pills) ===== */
 .month-pills{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
 .month-pill{
@@ -217,6 +238,11 @@ footer{ margin-top:18px; font-size:12px; color:var(--ink-muted); max-width:1360p
 <div class="wrap">
   <div class="kpi-grid" id="kpiGrid"></div>
 
+  <div class="card curso-card">
+    <div class="card-title">Alunos por curso</div>
+    <div class="curso-list" id="cursoList"></div>
+  </div>
+
   <div class="month-pills" id="monthPills"></div>
 
   <div class="toolbar">
@@ -226,6 +252,9 @@ footer{ margin-top:18px; font-size:12px; color:var(--ink-muted); max-width:1360p
     </select>
     <select id="tagFilter">
       <option value="">Todas as tags</option>
+    </select>
+    <select id="tagExcludeFilter">
+      <option value="">Sem excluir por tag</option>
     </select>
   </div>
 
@@ -262,7 +291,8 @@ footer{ margin-top:18px; font-size:12px; color:var(--ink-muted); max-width:1360p
   Station. Número de contatos e fluxo de mensagens são estimativa por texto livre da planilha
   (best-effort, não é uma contagem exata) — histórico de mensagens de WhatsApp continua disponível
   só como texto na Observação. Histórico de e-mail por contato não é exposto pela API do RD
-  Station Marketing (só há analytics agregado por campanha/workflow).
+  Station Marketing (só há analytics agregado por campanha/workflow). "Alunos por curso" conta
+  quem tem a tag curso:* correspondente (não depende do estágio no funil).
 </footer>
 
 <div class="overlay" id="overlay">
