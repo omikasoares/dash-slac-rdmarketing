@@ -9,14 +9,9 @@
  *   node scripts/import-csv.js caminho/para/export.csv
  *
  * Contatos importados ficam com synced_last_conversion_date = NULL, entao o
- * sync em segundo plano (lib/sync.js) automaticamente busca o historico
+ * sync do n8n ("SLAC - Sync RD Station") automaticamente busca o historico
  * detalhado de conversao (com atribuicao de trafego) na proxima rodada —
  * exatamente como trataria um contato novo.
- *
- * "Status para comunicação por email" (true/false) so existe nesse export —
- * a API do RD nao devolve esse campo por contato. Reimporte esse CSV de
- * tempos em tempos pra manter o filtro de ativos/inativos do dashboard
- * atualizado.
  */
 require('dotenv').config();
 const fs = require('fs');
@@ -124,7 +119,6 @@ const COLS = {
   last_conversion_date: 'Data da última conversão',
   origin: 'Origem da última conversão',
   events_summary_raw: 'Eventos (Últimos 100)',
-  email_status: 'Status para comunicação por email',
 };
 
 // Custom fields (cf_*) -> nome do header no export do RD. A ordem importa
@@ -174,8 +168,8 @@ function buildColumnIndex(headers) {
 /**
  * Extrai produtos comprados a partir do resumo bruto de eventos do CSV
  * ("Eventos (Ultimos 100)", segmentos separados por " / "). Mesmo padrao
- * "Compra aprovada - {produto}" usado em lib/sync.js pro caminho via API;
- * aqui e best-effort sobre o resumo truncado do export.
+ * "Compra aprovada - {produto}" usado no sync via API; aqui e best-effort
+ * sobre o resumo truncado do export.
  */
 function extractProdutosFromSummary(summaryRaw) {
   if (!summaryRaw) return [];
@@ -186,15 +180,6 @@ function extractProdutosFromSummary(summaryRaw) {
     if (match) produtos.push(match[1].trim());
   }
   return [...new Set(produtos)];
-}
-
-/** "true"/"false" (texto do export) -> boolean; qualquer outra coisa (célula
- * vazia, valor inesperado) -> null (desconhecido, tratado como ativo). */
-function parseEmailStatusAtivo(raw) {
-  const v = String(raw || '').trim().toLowerCase();
-  if (v === 'true') return true;
-  if (v === 'false') return false;
-  return null;
 }
 
 async function run() {
@@ -275,7 +260,6 @@ async function run() {
           events_summary_raw: eventsSummaryRaw,
           produtos_comprados: JSON.stringify(extractProdutosFromSummary(eventsSummaryRaw)),
           id_crm: customFields.cf_id_crm || null,
-          email_status_ativo: parseEmailStatusAtivo(get(COLS.email_status)),
         },
         client
       );
