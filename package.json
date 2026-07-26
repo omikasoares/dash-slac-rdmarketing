@@ -10,17 +10,12 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "get-rd-tokens": "node scripts/get-rd-tokens.js",
-    "get-google-tokens": "node scripts/get-google-tokens.js",
-    "sync": "node scripts/run-sync.js",
-    "import-csv": "node scripts/import-csv.js",
-    "sync-sheet": "node scripts/run-sheet-sync.js"
+    "import-csv": "node scripts/import-csv.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-basic-auth": "^1.2.1",
-    "googleapis": "^140.0.1",
     "pg": "^8.13.1"
   }
 }
