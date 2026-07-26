@@ -11,19 +11,8 @@ services:
     environment:
       - TZ=America/Sao_Paulo
       - PORT=3000
-      - RD_CLIENT_ID=${RD_CLIENT_ID}
-      - RD_CLIENT_SECRET=${RD_CLIENT_SECRET}
-      - RD_REFRESH_TOKEN=${RD_REFRESH_TOKEN}
-      - RD_MAX_REQUESTS_PER_MINUTE=${RD_MAX_REQUESTS_PER_MINUTE}
       - DASHBOARD_USER=${DASHBOARD_USER}
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD}
-      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
-      - DATABASE_URL=${DATABASE_URL}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - GOOGLE_REFRESH_TOKEN=${GOOGLE_REFRESH_TOKEN}
-      - CRM_SHEET_ID=${CRM_SHEET_ID}
-      - SHEET_SYNC_INTERVAL_MINUTES=${SHEET_SYNC_INTERVAL_MINUTES}
 
     deploy:
       mode: replicated
@@ -33,8 +22,8 @@ services:
           - node.role == manager
       resources:
         limits:
-          cpus: "0.5"
-          memory: 256M
+          cpus: "0.25"
+          memory: 128M
       labels:
         - traefik.enable=true
         - traefik.http.routers.dash-slac-rdmarketing.rule=Host(`slac.autz.com.br`)
