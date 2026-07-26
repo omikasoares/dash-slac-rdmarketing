@@ -8,6 +8,13 @@ let statusFilterMode = 'active';
 
 const MONTH_LABELS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 
+// O sync em massa do RD Station roda no n8n ("SLAC - Sync RD Station", a
+// cada 15min) e grava direto no Postgres. Esse webhook só consulta e
+// devolve os leads — o token é defesa contra chamadas diretas à URL do
+// webhook (o dashboard em si já fica atrás do Basic Auth do app).
+const LEADS_WEBHOOK_URL = 'https://webhook.autz.com.br/webhook/dashboard-slac-leads';
+const LEADS_WEBHOOK_TOKEN = 'slac7f2a9c4e1b6d8a3f5e0c9b2a7d4f1e6c8b3a9d2e';
+
 const els = {
   kpiGrid: document.getElementById('kpiGrid'),
   monthPills: document.getElementById('monthPills'),
@@ -23,7 +30,6 @@ const els = {
   dateTo: document.getElementById('dateTo'),
   syncDot: document.getElementById('syncDot'),
   syncLabel: document.getElementById('syncLabel'),
-  syncNowBtn: document.getElementById('syncNowBtn'),
   overlay: document.getElementById('overlay'),
   modalClose: document.getElementById('modalClose'),
   modalName: document.getElementById('modalName'),
@@ -457,7 +463,10 @@ function closeModal() {
 /* ===== Carregamento ===== */
 
 async function loadLeads() {
-  const res = await fetch('/api/leads');
+  const res = await fetch(LEADS_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'x-dashboard-token': LEADS_WEBHOOK_TOKEN },
+  });
   leads = await res.json();
   populateFilters();
   refreshPeriodViews();
@@ -469,10 +478,8 @@ async function loadSyncStatus() {
   syncStatusCache = status;
 
   const stale = status.last_sync_at && Date.now() - new Date(status.last_sync_at).getTime() > 2 * 60 * 60 * 1000;
-  els.syncDot.classList.toggle('stale', !!stale || status.syncing);
-  const rdLabel = status.syncing
-    ? `sincronizando… (${status.total_contacts} leads)`
-    : `${status.total_contacts} leads · atualizado ${timeAgo(status.last_sync_at)}`;
+  els.syncDot.classList.toggle('stale', !!stale);
+  const rdLabel = `${status.total_contacts} leads · atualizado ${timeAgo(status.last_sync_at)}`;
   const invalidNote = status.sheet_last_sync_invalid_id > 0
     ? ` · ${status.sheet_last_sync_invalid_id} com ID inválido na planilha`
     : '';
@@ -508,12 +515,6 @@ els.dateTo.addEventListener('change', () => {
 els.modalClose.addEventListener('click', closeModal);
 els.overlay.addEventListener('click', (e) => {
   if (e.target === els.overlay) closeModal();
-});
-els.syncNowBtn.addEventListener('click', async () => {
-  els.syncNowBtn.disabled = true;
-  await fetch('/api/sync-now', { method: 'POST' });
-  await loadSyncStatus();
-  els.syncNowBtn.disabled = false;
 });
 
 loadLeads();
