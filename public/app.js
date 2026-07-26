@@ -8,12 +8,13 @@ let statusFilterMode = 'active';
 
 const MONTH_LABELS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 
-// O sync em massa do RD Station roda no n8n ("SLAC - Sync RD Station", a
-// cada 15min) e grava direto no Postgres. Esse webhook só consulta e
-// devolve os leads — o token é defesa contra chamadas diretas à URL do
-// webhook (o dashboard em si já fica atrás do Basic Auth do app).
+// Todo o sync (RD Station, planilha de CRM, enriquecimento de nova
+// conversão) roda no n8n. Esse front busca tudo direto dos webhooks — o
+// token é defesa contra chamadas diretas às URLs (o dashboard em si já
+// fica atrás do Basic Auth do app).
 const LEADS_WEBHOOK_URL = 'https://webhook.autz.com.br/webhook/dashboard-slac-leads';
-const LEADS_WEBHOOK_TOKEN = 'slac7f2a9c4e1b6d8a3f5e0c9b2a7d4f1e6c8b3a9d2e';
+const STATUS_WEBHOOK_URL = 'https://webhook.autz.com.br/webhook/dashboard-slac-status';
+const DASHBOARD_WEBHOOK_TOKEN = 'slac7f2a9c4e1b6d8a3f5e0c9b2a7d4f1e6c8b3a9d2e';
 
 const els = {
   kpiGrid: document.getElementById('kpiGrid'),
@@ -465,7 +466,7 @@ function closeModal() {
 async function loadLeads() {
   const res = await fetch(LEADS_WEBHOOK_URL, {
     method: 'POST',
-    headers: { 'x-dashboard-token': LEADS_WEBHOOK_TOKEN },
+    headers: { 'x-dashboard-token': DASHBOARD_WEBHOOK_TOKEN },
   });
   leads = await res.json();
   populateFilters();
@@ -473,7 +474,10 @@ async function loadLeads() {
 }
 
 async function loadSyncStatus() {
-  const res = await fetch('/api/sync-status');
+  const res = await fetch(STATUS_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'x-dashboard-token': DASHBOARD_WEBHOOK_TOKEN },
+  });
   const status = await res.json();
   syncStatusCache = status;
 
@@ -483,9 +487,7 @@ async function loadSyncStatus() {
   const invalidNote = status.sheet_last_sync_invalid_id > 0
     ? ` · ${status.sheet_last_sync_invalid_id} com ID inválido na planilha`
     : '';
-  const sheetLabel = status.syncingSheet
-    ? 'planilha: sincronizando…'
-    : `planilha: ${status.sheet_last_sync_matched} casados${invalidNote}, atualizado ${timeAgo(status.sheet_last_sync_at)}`;
+  const sheetLabel = `planilha: ${status.sheet_last_sync_matched} casados${invalidNote}, atualizado ${timeAgo(status.sheet_last_sync_at)}`;
   els.syncLabel.textContent = `${rdLabel} · ${sheetLabel}`;
 
   renderKpis();
