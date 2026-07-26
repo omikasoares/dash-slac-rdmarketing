@@ -77,15 +77,10 @@ body{ min-height:100vh }
 .sync-pill{
   margin-top:10px; display:inline-flex; align-items:center; gap:8px;
   background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.14);
-  border-radius:999px; padding:5px 8px 5px 12px; font-size:12px; color:rgba(255,255,255,.75);
+  border-radius:999px; padding:5px 12px; font-size:12px; color:rgba(255,255,255,.75);
 }
 .sync-dot{ width:7px; height:7px; border-radius:50%; background:var(--lime); display:inline-block }
 .sync-dot.stale{ background:var(--warning) }
-.sync-pill button{
-  background:rgba(233,255,74,0.12); border:1px solid rgba(233,255,74,0.3); color:var(--lime);
-  font-weight:700; font-size:11px; cursor:pointer; padding:4px 10px; border-radius:999px;
-}
-.sync-pill button:hover{ background:rgba(233,255,74,0.2) }
 
 .wrap{ max-width:1360px; margin:0 auto; padding:28px 20px 60px }
 
@@ -234,7 +229,6 @@ footer{ margin-top:18px; font-size:12px; color:var(--ink-muted); max-width:1360p
     <div class="sync-pill">
       <span class="sync-dot" id="syncDot"></span>
       <span id="syncLabel">carregando…</span>
-      <button id="syncNowBtn">Sincronizar agora</button>
     </div>
   </div>
 </div>
@@ -311,7 +305,9 @@ footer{ margin-top:18px; font-size:12px; color:var(--ink-muted); max-width:1360p
   Station Marketing (só há analytics agregado por campanha/workflow). "Alunos por curso" conta
   quem tem a tag curso:* correspondente (não depende do estágio no funil). O filtro de período
   (mês ou intervalo de datas) usa a data de criação do lead no RD Station. O filtro "Só ativos"
-  esconde quem tem a tag status:inativo no RD Station (mantida manualmente pelo time).
+  esconde quem tem a tag status:inativo no RD Station (mantida manualmente pelo time). A base de
+  leads é sincronizada pelo n8n a cada 15 min (paginação da API do RD Station); o dashboard busca
+  os dados já prontos direto do Postgres via webhook ao abrir a página.
 </footer>
 
 <div class="overlay" id="overlay">
