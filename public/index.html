@@ -82,6 +82,25 @@ body{ min-height:100vh }
 .sync-dot{ width:7px; height:7px; border-radius:50%; background:var(--lime); display:inline-block }
 .sync-dot.stale{ background:var(--warning) }
 
+/* ===== Barra de progresso de carregamento ===== */
+.load-banner{
+  display:none; align-items:center; gap:14px;
+  background:var(--card); border-bottom:1px solid var(--border);
+  padding:10px 40px;
+}
+.load-banner.show{ display:flex; }
+.load-track{
+  flex:1; max-width:420px; height:6px; border-radius:999px;
+  background:var(--gridline); overflow:hidden;
+}
+.load-fill{
+  height:100%; border-radius:999px; background:var(--lime);
+  width:0%; transition:width .3s ease, background-color .3s ease;
+}
+.load-label{
+  font-size:12.5px; color:var(--ink-2); white-space:nowrap; font-variant-numeric:tabular-nums;
+}
+
 .wrap{ max-width:1360px; margin:0 auto; padding:28px 20px 60px }
 
 /* ===== KPI cards ===== */
@@ -231,6 +250,11 @@ footer{ margin-top:18px; font-size:12px; color:var(--ink-muted); max-width:1360p
       <span id="syncLabel">carregando…</span>
     </div>
   </div>
+</div>
+
+<div class="load-banner" id="loadBanner">
+  <div class="load-track"><div class="load-fill" id="loadFill"></div></div>
+  <div class="load-label" id="loadLabel">Carregando leads…</div>
 </div>
 
 <div class="wrap">
