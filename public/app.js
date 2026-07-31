@@ -16,9 +16,12 @@ const LEADS_WEBHOOK_URL = 'https://webhook.autz.com.br/webhook/dashboard-slac-le
 const STATUS_WEBHOOK_URL = 'https://webhook.autz.com.br/webhook/dashboard-slac-status';
 const DASHBOARD_WEBHOOK_TOKEN = 'slac7f2a9c4e1b6d8a3f5e0c9b2a7d4f1e6c8b3a9d2e';
 // A base tem ~75 mil leads; buscar tudo numa unica requisicao estoura a
-// memoria do worker do n8n. Busca paginada, renderizando a cada pagina pra
-// o dashboard nao ficar parecendo quebrado enquanto carrega.
+// memoria do worker do n8n (worker compartilhado com outras integracoes).
+// Testado ate 20k linhas: acima de ~10k o tempo de resposta escala mal
+// (sinal de pressao de memoria), entao o lote fica travado em 5000 tanto
+// aqui quanto no node de query do n8n — nao aumentar sem testar de novo.
 const LEADS_PAGE_SIZE = 5000;
+const LEADS_PAGE_MAX_RETRIES = 3;
 
 const els = {
   kpiGrid: document.getElementById('kpiGrid'),
@@ -35,6 +38,9 @@ const els = {
   dateTo: document.getElementById('dateTo'),
   syncDot: document.getElementById('syncDot'),
   syncLabel: document.getElementById('syncLabel'),
+  loadBanner: document.getElementById('loadBanner'),
+  loadFill: document.getElementById('loadFill'),
+  loadLabel: document.getElementById('loadLabel'),
   overlay: document.getElementById('overlay'),
   modalClose: document.getElementById('modalClose'),
   modalName: document.getElementById('modalName'),
@@ -469,25 +475,74 @@ function closeModal() {
 
 let leadsLoading = false;
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchLeadsPage(offset, attempt = 1) {
+  try {
+    const res = await fetch(`${LEADS_WEBHOOK_URL}?limit=${LEADS_PAGE_SIZE}&offset=${offset}`, {
+      method: 'POST',
+      headers: { 'x-dashboard-token': DASHBOARD_WEBHOOK_TOKEN },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    if (attempt >= LEADS_PAGE_MAX_RETRIES) throw err;
+    await sleep(attempt * 2000);
+    return fetchLeadsPage(offset, attempt + 1);
+  }
+}
+
+function showLoadBanner() {
+  els.loadFill.style.background = '';
+  els.loadFill.style.width = '2%';
+  els.loadLabel.textContent = 'Carregando leads…';
+  els.loadBanner.classList.add('show');
+}
+
+function updateLoadBanner(loadedCount) {
+  const total = syncStatusCache.total_contacts || null;
+  if (total) {
+    const pct = Math.max(2, Math.min(100, Math.round((loadedCount / total) * 100)));
+    els.loadFill.style.width = `${pct}%`;
+    els.loadLabel.textContent = `Carregando leads… ${loadedCount.toLocaleString('pt-BR')} de ${total.toLocaleString('pt-BR')} (${pct}%)`;
+  } else {
+    els.loadLabel.textContent = `Carregando leads… ${loadedCount.toLocaleString('pt-BR')} carregados`;
+  }
+}
+
+function showLoadError() {
+  els.loadFill.style.background = 'var(--critical)';
+  els.loadFill.style.width = '100%';
+  els.loadLabel.textContent = 'Não foi possível carregar todos os leads agora. Tentando de novo em instantes…';
+  setTimeout(() => els.loadBanner.classList.remove('show'), 6000);
+}
+
+function hideLoadBanner() {
+  els.loadBanner.classList.remove('show');
+}
+
 async function loadLeads() {
   if (leadsLoading) return;
   leadsLoading = true;
+  showLoadBanner();
   try {
     const loaded = [];
     let offset = 0;
     while (true) {
-      const res = await fetch(`${LEADS_WEBHOOK_URL}?limit=${LEADS_PAGE_SIZE}&offset=${offset}`, {
-        method: 'POST',
-        headers: { 'x-dashboard-token': DASHBOARD_WEBHOOK_TOKEN },
-      });
-      const page = await res.json();
+      const page = await fetchLeadsPage(offset);
       loaded.push(...page);
       leads = loaded;
       populateFilters();
       refreshPeriodViews();
+      updateLoadBanner(loaded.length);
       if (page.length < LEADS_PAGE_SIZE) break;
       offset += LEADS_PAGE_SIZE;
     }
+    hideLoadBanner();
+  } catch (err) {
+    showLoadError();
   } finally {
     leadsLoading = false;
   }
@@ -539,7 +594,11 @@ els.overlay.addEventListener('click', (e) => {
   if (e.target === els.overlay) closeModal();
 });
 
-loadLeads();
-loadSyncStatus();
+async function init() {
+  await loadSyncStatus();
+  await loadLeads();
+}
+
+init();
 setInterval(loadSyncStatus, 60_000);
 setInterval(loadLeads, 15 * 60_000);
