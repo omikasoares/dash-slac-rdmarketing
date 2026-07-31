@@ -15,6 +15,10 @@ const MONTH_LABELS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','
 const LEADS_WEBHOOK_URL = 'https://webhook.autz.com.br/webhook/dashboard-slac-leads';
 const STATUS_WEBHOOK_URL = 'https://webhook.autz.com.br/webhook/dashboard-slac-status';
 const DASHBOARD_WEBHOOK_TOKEN = 'slac7f2a9c4e1b6d8a3f5e0c9b2a7d4f1e6c8b3a9d2e';
+// A base tem ~75 mil leads; buscar tudo numa unica requisicao estoura a
+// memoria do worker do n8n. Busca paginada, renderizando a cada pagina pra
+// o dashboard nao ficar parecendo quebrado enquanto carrega.
+const LEADS_PAGE_SIZE = 5000;
 
 const els = {
   kpiGrid: document.getElementById('kpiGrid'),
@@ -463,14 +467,30 @@ function closeModal() {
 
 /* ===== Carregamento ===== */
 
+let leadsLoading = false;
+
 async function loadLeads() {
-  const res = await fetch(LEADS_WEBHOOK_URL, {
-    method: 'POST',
-    headers: { 'x-dashboard-token': DASHBOARD_WEBHOOK_TOKEN },
-  });
-  leads = await res.json();
-  populateFilters();
-  refreshPeriodViews();
+  if (leadsLoading) return;
+  leadsLoading = true;
+  try {
+    const loaded = [];
+    let offset = 0;
+    while (true) {
+      const res = await fetch(`${LEADS_WEBHOOK_URL}?limit=${LEADS_PAGE_SIZE}&offset=${offset}`, {
+        method: 'POST',
+        headers: { 'x-dashboard-token': DASHBOARD_WEBHOOK_TOKEN },
+      });
+      const page = await res.json();
+      loaded.push(...page);
+      leads = loaded;
+      populateFilters();
+      refreshPeriodViews();
+      if (page.length < LEADS_PAGE_SIZE) break;
+      offset += LEADS_PAGE_SIZE;
+    }
+  } finally {
+    leadsLoading = false;
+  }
 }
 
 async function loadSyncStatus() {
@@ -522,4 +542,4 @@ els.overlay.addEventListener('click', (e) => {
 loadLeads();
 loadSyncStatus();
 setInterval(loadSyncStatus, 60_000);
-setInterval(loadLeads, 5 * 60_000);
+setInterval(loadLeads, 15 * 60_000);
